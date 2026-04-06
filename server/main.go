@@ -23,6 +23,21 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
+// buildBaseURL returns the public-facing base URL (scheme + host) for the request,
+// correctly handling reverse proxies like Cloudflare.
+func buildBaseURL(r *http.Request) string {
+	scheme := "https"
+	if r.TLS == nil && (strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1")) {
+		scheme = "http"
+	}
+	// Behind Cloudflare Flexible SSL, X-Forwarded-Proto may be "http" even though
+	// the public URL is https. Only trust it for localhost; in production always use https.
+	if fwd := r.Header.Get("X-Forwarded-Proto"); fwd != "" && scheme == "http" {
+		scheme = fwd
+	}
+	return fmt.Sprintf("%s://%s", scheme, r.Host)
+}
+
 func main() {
 	db := NewSupabaseClient()
 	hub := NewHub(db)
@@ -311,14 +326,8 @@ func main() {
 		oauthStates.Store(state, returnTo)
 
 		// Build redirect URI (same origin)
-		scheme := "https"
-		if r.TLS == nil && (strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1")) {
-			scheme = "http"
-		}
-		if fwd := r.Header.Get("X-Forwarded-Proto"); fwd != "" {
-			scheme = fwd
-		}
-		redirectURI := fmt.Sprintf("%s://%s/api/linear/callback", scheme, r.Host)
+		redirectURI := buildBaseURL(r) + "/api/linear/callback"
+		log.Printf("Linear OAuth: host=%s fwd=%s redirect_uri=%s", r.Host, r.Header.Get("X-Forwarded-Proto"), redirectURI)
 
 		authURL := fmt.Sprintf(
 			"https://linear.app/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=read,write,issues:create&state=%s&prompt=consent",
@@ -347,14 +356,7 @@ func main() {
 		returnTo := returnToVal.(string)
 
 		// Build redirect URI (must match the one used in /api/linear/auth)
-		scheme := "https"
-		if r.TLS == nil && (strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1")) {
-			scheme = "http"
-		}
-		if fwd := r.Header.Get("X-Forwarded-Proto"); fwd != "" {
-			scheme = fwd
-		}
-		redirectURI := fmt.Sprintf("%s://%s/api/linear/callback", scheme, r.Host)
+		redirectURI := buildBaseURL(r) + "/api/linear/callback"
 
 		// Exchange code for token
 		tokenData := url.Values{
