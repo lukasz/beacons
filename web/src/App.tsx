@@ -238,8 +238,12 @@ export default function App() {
 
   useEffect(() => {
     // Set initial history state so first entry has data
+    // Don't replace URL if there's an auth hash (Supabase needs to read it)
     const initial = parseLocation();
-    window.history.replaceState(initial, '', navUrl(initial));
+    const hash = window.location.hash;
+    if (!hash.includes('access_token=') && !hash.includes('linear_token=')) {
+      window.history.replaceState(initial, '', navUrl(initial));
+    }
 
     const onPopState = (e: PopStateEvent) => {
       const s: NavState = e.state || parseLocation();
