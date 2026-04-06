@@ -20,8 +20,8 @@ RUN cd server && go build -o beacons .
 # -- Runtime --
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
-WORKDIR /app
-COPY --from=backend /app/server/beacons ./server/beacons
-COPY --from=frontend /app/web/dist ./web/dist
+WORKDIR /app/server
+COPY --from=backend /app/server/beacons ./beacons
+COPY --from=frontend /app/web/dist ../web/dist
 EXPOSE 8080
-CMD ["./server/beacons"]
+CMD ["./beacons"]
