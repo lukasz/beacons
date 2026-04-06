@@ -1,0 +1,138 @@
+import { useState, useRef, useCallback } from 'react';
+import { useBoard } from '../hooks/useBoard';
+import type { Group } from '../types';
+import { zoomRef } from '../zoomRef';
+
+const RANK_MEDALS = ['', '\u{1F947}', '\u{1F948}', '\u{1F949}'];
+
+function ordinal(n: number) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+interface Props {
+  group: Group;
+  voteCount: number;
+  canVote: boolean;
+  canUnvote: boolean;
+  onVote: (id: string) => void;
+  onUnvote: (id: string) => void;
+  rank: number;
+  selected?: boolean;
+  votingActive?: boolean;
+  grabMode?: boolean;
+}
+
+export default function GroupLabelComponent({ group, voteCount, canVote, canUnvote, onVote, onUnvote, rank, selected, votingActive, grabMode }: Props) {
+  const { send } = useBoard();
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(group.label);
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const lastSend = useRef(0);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (editing || selected || votingActive || grabMode) return;
+      e.preventDefault();
+      const el = e.currentTarget as HTMLElement;
+      el.setPointerCapture(e.pointerId);
+      dragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: group.x,
+        origY: group.y,
+      };
+    },
+    [editing, selected, votingActive, group.x, group.y],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragRef.current) return;
+      const z = zoomRef.current || 1;
+      const dx = (e.clientX - dragRef.current.startX) / z;
+      const dy = (e.clientY - dragRef.current.startY) / z;
+
+      const now = Date.now();
+      if (now - lastSend.current > 30) {
+        send('update_group', {
+          id: group.id,
+          label: group.label,
+          x: dragRef.current.origX + dx,
+          y: dragRef.current.origY + dy,
+          w: group.w,
+          h: group.h,
+        });
+        lastSend.current = now;
+      }
+    },
+    [send, group],
+  );
+
+  const handlePointerUp = useCallback(() => {
+    dragRef.current = null;
+  }, []);
+
+  return (
+    <div
+      className="group-label"
+      data-item-type="group"
+      data-item-id={group.id}
+      style={{ transform: `translate(${group.x}px, ${group.y}px)`, zIndex: rank > 0 ? 60 : undefined }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onClick={() => {
+        if (grabMode) return;
+        if (canVote) {
+          onVote(group.id);
+        }
+      }}
+      onDoubleClick={() => {
+        if (votingActive || grabMode) return;
+        setLabel(group.label);
+        setEditing(true);
+      }}
+    >
+      {rank > 0 && (
+        <div className={`rank-badge rank-${Math.min(rank, 4)}`}>
+          {RANK_MEDALS[rank] && <span className="rank-medal">{RANK_MEDALS[rank]}</span>}
+          <span className="rank-text">{ordinal(rank)}</span>
+        </div>
+      )}
+
+      {voteCount > 0 && !rank && (
+        <div
+          className={`vote-badge ${canUnvote ? 'can-unvote' : ''}`}
+          data-count={voteCount}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (canUnvote) onUnvote(group.id);
+          }}
+        />
+      )}
+      {editing ? (
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={() => {
+            setEditing(false);
+            send('update_group', { ...group, label });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              setEditing(false);
+              send('update_group', { ...group, label });
+            }
+          }}
+          autoFocus
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span>{group.label}</span>
+      )}
+    </div>
+  );
+}
