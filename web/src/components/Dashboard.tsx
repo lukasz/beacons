@@ -1360,6 +1360,33 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
               <div className="team-tab-dashboard">
                 {/* Two-column: Cycles + Projects */}
                 <div className="team-tab-two-col">
+                  {/* Connect to Linear prompt when team is mapped but no API key */}
+                  {selectedTeam.linearTeamId && !localStorage.getItem(LINEAR_KEY_STORAGE) && (
+                    <div className="team-tab-connect-linear">
+                      <svg width="24" height="24" viewBox="0 0 100 100" fill="none" style={{ opacity: 0.6 }}>
+                        <path d="M2.4 60.7a50 50 0 0 0 36.9 36.9L2.4 60.7z" fill="currentColor"/>
+                        <path d="M.2 49.2a50 50 0 0 0 1.3 8.3L46.6 2.4A50 50 0 0 0 .2 49.2z" fill="currentColor"/>
+                        <path d="M97.6 39.3a50 50 0 0 0-36.9-36.9l36.9 36.9z" fill="currentColor"/>
+                        <path d="M99.8 50.8a50 50 0 0 0-1.3-8.3L53.4 97.6a50 50 0 0 0 46.4-46.8z" fill="currentColor"/>
+                      </svg>
+                      <p>Connect to Linear to see cycles, projects, and velocity for this team.</p>
+                      <button
+                        className="btn btn-primary linear-oauth-btn"
+                        onClick={() => {
+                          const returnTo = window.location.pathname + window.location.search;
+                          window.location.href = `/api/linear/auth?return_to=${encodeURIComponent(returnTo)}`;
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 100 100" fill="none">
+                          <path d="M2.4 60.7a50 50 0 0 0 36.9 36.9L2.4 60.7z" fill="currentColor"/>
+                          <path d="M.2 49.2a50 50 0 0 0 1.3 8.3L46.6 2.4A50 50 0 0 0 .2 49.2z" fill="currentColor"/>
+                          <path d="M97.6 39.3a50 50 0 0 0-36.9-36.9l36.9 36.9z" fill="currentColor"/>
+                          <path d="M99.8 50.8a50 50 0 0 0-1.3-8.3L53.4 97.6a50 50 0 0 0 46.4-46.8z" fill="currentColor"/>
+                        </svg>
+                        {' '}Connect with Linear
+                      </button>
+                    </div>
+                  )}
                   {/* ---- Cycles Box ---- */}
                   {selectedTeam.linearTeamId && (() => {
                     const activeCycle = allCycles.find((c) => c.isActive);
