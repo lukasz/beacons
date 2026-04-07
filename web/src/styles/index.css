@@ -5528,6 +5528,25 @@ input[type="number"] {
   align-self: center;
 }
 
+.rice-link-btn {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(255, 63, 16, 0.08);
+  border: 1px solid rgba(255, 63, 16, 0.2);
+  border-radius: 4px;
+  padding: 3px 10px;
+  color: #FF3F10;
+  margin-left: 8px;
+  align-self: center;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  transition: background 0.15s, border-color 0.15s;
+}
+.rice-link-btn:hover {
+  background: rgba(255, 63, 16, 0.15);
+  border-color: rgba(255, 63, 16, 0.4);
+}
+
 /* Team Tab Dropdown Selector */
 .team-tab-dropdown {
   position: relative;

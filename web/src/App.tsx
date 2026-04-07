@@ -6,6 +6,7 @@ import SignIn from './components/SignIn';
 import GuestJoin from './components/GuestJoin';
 import Dashboard from './components/Dashboard';
 import Board from './components/Board';
+import RiceCalculator from './components/RiceCalculator';
 
 // Initialize theme from localStorage before first render
 (() => {
@@ -17,7 +18,8 @@ import Board from './components/Board';
 
 type NavState =
   | { view: 'dashboard'; tab?: string }
-  | { view: 'board'; roomId: string; template?: boolean };
+  | { view: 'board'; roomId: string; template?: boolean }
+  | { view: 'rice' };
 
 function parseLocation(): NavState {
   const path = window.location.pathname;
@@ -28,9 +30,11 @@ function parseLocation(): NavState {
     return { view: 'board', roomId: boardMatch[1], template: params.get('mode') === 'template' || undefined };
   }
 
+  if (path === '/rice') return { view: 'rice' };
+
   // Legacy: bare /<roomId>
   const bare = path.slice(1);
-  if (bare && /^[a-zA-Z0-9_-]{4,}$/.test(bare) && !['boards', 'templates', 'actions', 'teams'].includes(bare)) {
+  if (bare && /^[a-zA-Z0-9_-]{4,}$/.test(bare) && !['boards', 'templates', 'actions', 'teams', 'rice'].includes(bare)) {
     return { view: 'board', roomId: bare };
   }
 
@@ -39,6 +43,7 @@ function parseLocation(): NavState {
 }
 
 function navUrl(s: NavState): string {
+  if (s.view === 'rice') return '/rice';
   if (s.view === 'board') {
     const base = `/board/${s.roomId}`;
     return s.template ? `${base}?mode=template` : base;
@@ -280,6 +285,11 @@ export default function App() {
     return <SignIn onSignIn={signIn} />;
   }
 
+  // RICE calculator (hidden tool for Platform Service)
+  if (navState.view === 'rice' && user) {
+    return <RiceCalculator onBack={() => navigate({ view: 'dashboard', tab: 'teams' })} />;
+  }
+
   // Authenticated but not in a room
   if (!joined) {
     return (
@@ -296,6 +306,7 @@ export default function App() {
         onJoinRoom={handleJoin}
         onTabChange={handleTabChange}
         onSignOut={signOut}
+        onNavigateRice={() => navigate({ view: 'rice' })}
       />
     );
   }

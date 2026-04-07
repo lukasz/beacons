@@ -62,6 +62,8 @@ export interface Template {
   updated_at: string;
 }
 
+const RICE_ENABLED_TEAM = 'Platform Service';
+
 interface Props {
   user: AuthUser;
   defaultRoomId: string | null;
@@ -74,6 +76,7 @@ interface Props {
   onJoinRoom: (roomId: string) => void;
   onTabChange?: (tab: string) => void;
   onSignOut: () => void;
+  onNavigateRice?: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -90,7 +93,7 @@ function timeAgo(dateStr: string): string {
 
 type Tab = 'boards' | 'actions' | 'teams';
 
-export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoom, onCreateFromTemplate, onCreateTemplate, onEditTemplate, onUseTemplate, onJoinRoom, onTabChange, onSignOut }: Props) {
+export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoom, onCreateFromTemplate, onCreateTemplate, onEditTemplate, onUseTemplate, onJoinRoom, onTabChange, onSignOut, onNavigateRice }: Props) {
   const validTabs: Tab[] = ['boards', 'actions', 'teams'];
   const initialTab = (defaultTab && validTabs.includes(defaultTab as Tab)) ? defaultTab as Tab : 'boards';
   const [tab, setTabState] = useState<Tab>(initialTab);
@@ -1328,6 +1331,9 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
                 <h2 className="dash-title">{selectedTeam ? selectedTeam.name : 'Teams'}</h2>
                 {selectedTeam?.linearTeamKey && (
                   <span className="team-tab-header-key">{selectedTeam.linearTeamKey}</span>
+                )}
+                {selectedTeam?.name === RICE_ENABLED_TEAM && onNavigateRice && (
+                  <button className="rice-link-btn" onClick={onNavigateRice}>RICE</button>
                 )}
               </div>
               <div className="dash-actions">
