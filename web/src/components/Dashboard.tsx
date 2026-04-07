@@ -62,7 +62,7 @@ export interface Template {
   updated_at: string;
 }
 
-const RICE_ENABLED_TEAM = 'Platform Service';
+const RICE_ENABLED_TEAM = 'Platform';
 
 interface Props {
   user: AuthUser;
