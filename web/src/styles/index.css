@@ -6224,11 +6224,12 @@ input[type="number"] {
    ============================================ */
 
 .rice-page {
-  min-height: 100vh;
+  height: 100vh;
   background: var(--bg);
   color: var(--text);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .rice-header {
   background: var(--bg-surface);
@@ -6292,6 +6293,7 @@ input[type="number"] {
 }
 .rice-body {
   flex: 1;
+  overflow-y: auto;
   max-width: 520px;
   width: 100%;
   margin: 0 auto;
