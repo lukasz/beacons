@@ -258,24 +258,30 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
   const fetchTeamsData = useCallback(async () => {
     try {
-      // Fetch teams the user belongs to
-      const { data: memberships, error: memErr } = await supabase
+      // Fetch all teams (shared across the org)
+      const { data: teamRows, error: teamErr } = await supabase
+        .from('teams')
+        .select('*')
+        .order('name');
+
+      if (teamErr) { console.error('Failed to fetch teams:', teamErr); return; }
+      if (!teamRows || teamRows.length === 0) { setTeams([]); return; }
+
+      // Auto-join: ensure current user is a member of every team
+      const { data: memberships } = await supabase
         .from('team_members')
         .select('team_id')
         .eq('user_id', user.id);
 
-      if (memErr) { console.error('Failed to fetch team memberships:', memErr); return; }
-      if (!memberships || memberships.length === 0) { setTeams([]); return; }
+      const memberOf = new Set((memberships || []).map((m: { team_id: string }) => m.team_id));
+      const missing = teamRows.filter((t: Record<string, unknown>) => !memberOf.has(t.id as string));
+      if (missing.length > 0) {
+        await supabase.from('team_members').insert(
+          missing.map((t: Record<string, unknown>) => ({ team_id: t.id as string, user_id: user.id, role: 'member' })),
+        );
+      }
 
-      const teamIds = memberships.map((m: { team_id: string }) => m.team_id);
-      const { data: teamRows, error: teamErr } = await supabase
-        .from('teams')
-        .select('*')
-        .in('id', teamIds)
-        .order('name');
-
-      if (teamErr) { console.error('Failed to fetch teams:', teamErr); return; }
-      setTeams((teamRows || []).map((t: Record<string, unknown>) => ({
+      setTeams(teamRows.map((t: Record<string, unknown>) => ({
         id: t.id as string,
         name: t.name as string,
         linearTeamId: (t.linear_team_id as string) || undefined,
