@@ -213,7 +213,8 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
             _isParticipant: isParticipant,
           };
         })
-        .filter((b: BoardSummary & { _isParticipant: boolean }) => b._isParticipant)
+        // Show all boards to all authenticated users (small org — no per-user filtering)
+        // .filter((b: BoardSummary & { _isParticipant: boolean }) => b._isParticipant)
         .map(({ _isParticipant, ...rest }: BoardSummary & { _isParticipant: boolean }) => rest);
 
       setBoards(summaries);
