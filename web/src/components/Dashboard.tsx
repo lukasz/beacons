@@ -357,10 +357,16 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
     const linearTeamId = team.linearTeamId;
 
     Promise.all([
-      fetchCycles(apiKey, linearTeamId).catch(() => [] as LinearCycle[]),
+      fetchCycles(apiKey, linearTeamId).catch((e) => {
+        if (String(e).includes('401')) localStorage.removeItem(LINEAR_KEY_STORAGE);
+        return [] as LinearCycle[];
+      }),
       fetchProjects(apiKey).then((all) =>
         all.filter((p) => p.teams.nodes.some((t) => t.id === linearTeamId))
-      ).catch(() => [] as LinearProject[]),
+      ).catch((e) => {
+        if (String(e).includes('401')) localStorage.removeItem(LINEAR_KEY_STORAGE);
+        return [] as LinearProject[];
+      }),
     ]).then(([cyc, proj]) => {
       setTeamTabCycles(cyc);
       setTeamTabProjects(proj);

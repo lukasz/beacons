@@ -204,7 +204,16 @@ export default function LinearSync({ onClose, onCreateBoard, templates, defaultT
   useEffect(() => {
     if (step !== 'team' || !key) return;
     setError('');
-    fetchTeams(key).then(setTeams).catch((e) => setError(e.message));
+    fetchTeams(key).then(setTeams).catch((e) => {
+      const msg = e.message || '';
+      if (msg.includes('401') || msg.includes('AUTHENTICATION') || msg.includes('not authenticated')) {
+        localStorage.removeItem(LINEAR_KEY_STORAGE);
+        setStep('connect');
+        setError('Linear session expired. Please reconnect.');
+      } else {
+        setError(msg);
+      }
+    });
   }, [step, key]);
 
   // Load cycles when team selected
