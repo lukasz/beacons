@@ -29,6 +29,7 @@ type Action =
   | { type: 'move_postit'; payload: PostIt }
   | { type: 'delete_postit'; payload: { id: string } }
   | { type: 'toggle_hide'; payload: { userId: string; hidden: boolean } }
+  | { type: 'toggle_hide_all'; payload: { hidden: boolean } }
   | { type: 'add_group'; payload: Group }
   | { type: 'update_group'; payload: Group }
   | { type: 'delete_group'; payload: { id: string } }
@@ -108,6 +109,18 @@ function boardReducer(state: BoardState, action: Action): BoardState {
       const users = { ...state.users };
       if (users[action.payload.userId]) {
         users[action.payload.userId] = { ...users[action.payload.userId], hideMode: action.payload.hidden };
+      }
+      return { ...state, postIts, users };
+    }
+
+    case 'toggle_hide_all': {
+      const postIts = { ...state.postIts };
+      for (const [id, p] of Object.entries(postIts)) {
+        postIts[id] = { ...p, hidden: action.payload.hidden };
+      }
+      const users = { ...state.users };
+      for (const [id, u] of Object.entries(users)) {
+        users[id] = { ...u, hideMode: action.payload.hidden };
       }
       return { ...state, postIts, users };
     }

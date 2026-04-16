@@ -15,12 +15,18 @@ interface Props {
   onSectionColorChange: (idx: number) => void;
   templateMode?: boolean;
   onGiphyOpen?: () => void;
+  hideMode: boolean;
+  onToggleHide: () => void;
+  isFacilitator: boolean;
+  allHidden: boolean;
+  onToggleHideAll: () => void;
 }
 
 export default function FloatingMenu({
   activeMode, onModeChange, timerOpen, onToggleTimer, hasVoteActivity,
   stickyColorIdx, onStickyColorChange, sectionColorIdx, onSectionColorChange,
   templateMode, onGiphyOpen,
+  hideMode, onToggleHide, isFacilitator, allHidden, onToggleHideAll,
 }: Props) {
   const [colorPickerFor, setColorPickerFor] = useState<'section' | 'postit' | null>(null);
 
@@ -143,6 +149,32 @@ export default function FloatingMenu({
         <span className="floating-menu-icon">◈</span>
         <span className="floating-menu-label">GIF</span>
       </button>
+
+      {!templateMode && (
+        <>
+          <div className="floating-menu-divider" />
+
+          <button
+            className={`floating-menu-btn ${hideMode ? 'active' : ''}`}
+            onClick={onToggleHide}
+            title={hideMode ? 'Reveal my notes' : 'Hide my notes'}
+          >
+            <span className="floating-menu-icon">{hideMode ? '🙈' : '👁'}</span>
+            <span className="floating-menu-label">{hideMode ? 'Hidden' : 'Hide mine'}</span>
+          </button>
+
+          {isFacilitator && (
+            <button
+              className={`floating-menu-btn ${allHidden ? 'active' : ''}`}
+              onClick={onToggleHideAll}
+              title={allHidden ? "Reveal everyone's notes" : "Hide everyone's notes"}
+            >
+              <span className="floating-menu-icon">{allHidden ? '🔒' : '🔓'}</span>
+              <span className="floating-menu-label">{allHidden ? 'All hidden' : 'Hide all'}</span>
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

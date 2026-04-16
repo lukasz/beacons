@@ -1784,6 +1784,18 @@ export default function Board() {
           onSectionColorChange={setCtxSectionColor}
           templateMode={templateMode}
           onGiphyOpen={() => setGiphyOpen(true)}
+          hideMode={!!state.users[userId]?.hideMode}
+          onToggleHide={() => {
+            const current = !!state.users[userId]?.hideMode;
+            send('toggle_hide', { userId, hidden: !current });
+          }}
+          isFacilitator={!!state.createdBy && state.createdBy === userId}
+          allHidden={Object.values(state.users).length > 0 && Object.values(state.users).every((u) => u.hideMode)}
+          onToggleHideAll={() => {
+            const users = Object.values(state.users);
+            const everyoneHidden = users.length > 0 && users.every((u) => u.hideMode);
+            send('toggle_hide_all', { hidden: !everyoneHidden });
+          }}
         />
 
         {/* Giphy picker */}

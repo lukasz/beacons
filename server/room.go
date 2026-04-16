@@ -97,6 +97,10 @@ func (r *Room) Run() {
 					HideMode:  true,
 				}
 			}
+			// The very first user to enter a room is treated as the facilitator.
+			if r.state.CreatedBy == "" {
+				r.state.CreatedBy = client.userID
+			}
 			// Align this user's post-its with their current HideMode.
 			hide := r.state.Users[client.userID].HideMode
 			for _, p := range r.state.PostIts {
@@ -218,6 +222,18 @@ func (r *Room) handleMessage(cm ClientMessage) {
 			return
 		}
 		r.broadcastMsg(MsgToggleHide, map[string]interface{}{"userId": userID, "hidden": hidden})
+
+	case MsgToggleHideAll:
+		// Only the facilitator (first user who entered the room) can hide/show
+		// everyone's cards at once.
+		if r.state.CreatedBy == "" || cm.client.userID != r.state.CreatedBy {
+			return
+		}
+		hidden, err := r.state.ToggleHideAll(msg.Payload)
+		if err != nil {
+			return
+		}
+		r.broadcastMsg(MsgToggleHideAll, map[string]interface{}{"hidden": hidden})
 
 	case MsgAddGroup:
 		g, err := r.state.AddGroup(msg.Payload)

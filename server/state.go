@@ -23,6 +23,7 @@ type BoardState struct {
 	CycleStats  json.RawMessage     `json:"cycleStats,omitempty"`
 	TeamID      string              `json:"teamId,omitempty"`
 	AccessMode  string              `json:"accessMode,omitempty"` // "org" (default) or "public"
+	CreatedBy   string              `json:"createdBy,omitempty"`  // userID of the first user who entered this room
 }
 
 type Action struct {
@@ -295,6 +296,24 @@ func (s *BoardState) ToggleHide(data json.RawMessage) (string, bool, error) {
 		}
 	}
 	return payload.UserID, payload.Hidden, nil
+}
+
+// ToggleHideAll flips every user's HideMode and every post-it's Hidden flag
+// to the given value. Intended to be called only for the board creator.
+func (s *BoardState) ToggleHideAll(data json.RawMessage) (bool, error) {
+	var payload struct {
+		Hidden bool `json:"hidden"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return false, err
+	}
+	for _, u := range s.Users {
+		u.HideMode = payload.Hidden
+	}
+	for _, p := range s.PostIts {
+		p.Hidden = payload.Hidden
+	}
+	return payload.Hidden, nil
 }
 
 func (s *BoardState) AddGroup(data json.RawMessage) (*Group, error) {

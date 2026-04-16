@@ -4,11 +4,8 @@ import { COLORS } from '../types';
 import { useTheme } from '../hooks/useTheme';
 
 export default function Toolbar() {
-  const { state, send, dispatch, userId, onLeave, templateMode, isGuest } = useBoard();
+  const { state, send, dispatch, onLeave, templateMode, isGuest } = useBoard();
   const { theme, toggleTheme } = useTheme();
-
-  const user = state.users[userId];
-  const hideMode = user?.hideMode || false;
 
   const connectedUsers = Object.values(state.users).filter((u) => u.connected);
   const isGeek = theme === 'dark';
@@ -235,16 +232,6 @@ export default function Toolbar() {
 
       {templateMode && (
         <span className="toolbar-template-badge">Template</span>
-      )}
-
-      {!templateMode && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', flexShrink: 0 }}>
-          <span>Hide my notes</span>
-          <div
-            className={`toggle ${hideMode ? 'active' : ''}`}
-            onClick={() => send('toggle_hide', { userId, hidden: !hideMode })}
-          />
-        </div>
       )}
 
       {!templateMode && (

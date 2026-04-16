@@ -147,6 +147,7 @@ export interface BoardState {
   cycleStats?: CycleStats;
   teamId?: string;
   accessMode?: 'org' | 'public';
+  createdBy?: string;
 }
 
 export interface Team {

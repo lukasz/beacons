@@ -21,6 +21,7 @@ const (
 	MsgDeletePostIt  = "delete_postit"
 	MsgMovePostIt    = "move_postit"
 	MsgToggleHide    = "toggle_hide"
+	MsgToggleHideAll = "toggle_hide_all"
 	MsgAddGroup      = "add_group"
 	MsgUpdateGroup   = "update_group"
 	MsgDeleteGroup   = "delete_group"
