@@ -39,9 +39,10 @@ interface Props {
   section: SectionType;
   selected?: boolean;
   grabMode?: boolean;
+  votingActive?: boolean;
 }
 
-export default function SectionComponent({ section, selected, grabMode }: Props) {
+export default function SectionComponent({ section, selected, grabMode, votingActive }: Props) {
   const { state, send, userId } = useBoard();
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(section.title);
@@ -81,7 +82,7 @@ export default function SectionComponent({ section, selected, grabMode }: Props)
   // Drag header to move — also moves child post-its
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (editingTitle || selected || grabMode) return;
+      if (editingTitle || selected || grabMode || votingActive) return;
       e.preventDefault();
       const el = e.currentTarget as HTMLElement;
       el.setPointerCapture(e.pointerId);
@@ -106,7 +107,7 @@ export default function SectionComponent({ section, selected, grabMode }: Props)
         groupSnap,
       };
     },
-    [editingTitle, selected, section.x, section.y, section.id, state.postIts, state.groups],
+    [editingTitle, selected, grabMode, votingActive, section.x, section.y, section.id, state.postIts, state.groups],
   );
 
   const handlePointerMove = useCallback(

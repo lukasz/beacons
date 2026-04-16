@@ -1049,7 +1049,7 @@ export default function Board() {
       }
 
       // Left-click on an image: select it (images don't handle their own selection)
-      if (e.button === 0 && !grabMode) {
+      if (e.button === 0 && !grabMode && !votingActive) {
         const clickedTarget = findItemTarget(target);
         if (clickedTarget && clickedTarget.type === 'image') {
           e.preventDefault();
@@ -1088,7 +1088,9 @@ export default function Board() {
       }
 
       // Left-click on a selected item: start dragging the selection
-      if (e.button === 0 && selection.length > 0) {
+      // During voting, dragging is disabled so that vote-click + tiny mouse wobble
+      // doesn't move cards/sections for everyone.
+      if (e.button === 0 && selection.length > 0 && !votingActive) {
         const clickedTarget = findItemTarget(target);
         if (clickedTarget && selection.some((s) => s.type === clickedTarget.type && s.id === clickedTarget.id)) {
           e.preventDefault();
@@ -1117,7 +1119,7 @@ export default function Board() {
         }
       }
     },
-    [radialMenu, creationMode, screenToCanvas, placeItem, grabMode, selection, findItemTarget, state.postIts, state.sections, state.groups, state.images],
+    [radialMenu, creationMode, screenToCanvas, placeItem, grabMode, selection, findItemTarget, votingActive, state.postIts, state.sections, state.groups, state.images],
   );
 
   const handleBoardPointerMove = useCallback(
@@ -1615,7 +1617,7 @@ export default function Board() {
             ))}
 
             {sections.map((s) => (
-              <SectionComponent key={s.id} section={s} selected={selectedIds.has(`section:${s.id}`)} grabMode={grabMode} />
+              <SectionComponent key={s.id} section={s} selected={selectedIds.has(`section:${s.id}`)} grabMode={grabMode} votingActive={votingActive} />
             ))}
 
             {groups.map((g) => (
