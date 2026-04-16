@@ -4,6 +4,10 @@ import type { PostIt as PostItType } from '../types';
 import { POSTIT_COLORS } from '../types';
 import { zoomRef } from '../zoomRef';
 
+// Screen-space pointer motion, in px, required before we treat a
+// pointerdown as the start of a drag. Anything smaller is a click.
+const DRAG_THRESHOLD = 4;
+
 const RANK_MEDALS = ['', '\u{1F947}', '\u{1F948}', '\u{1F949}'];
 
 function ordinal(n: number) {
@@ -69,16 +73,16 @@ export default function PostItComponent({ postIt, colorIdx, voteCount, canVote, 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!dragRef.current) return;
+      // Screen-space delta — compare against threshold before zoom scaling so
+      // a tiny click-wobble never leaves the device regardless of zoom.
+      const sdx = e.clientX - dragRef.current.startX;
+      const sdy = e.clientY - dragRef.current.startY;
+      if (!didDrag.current && Math.abs(sdx) <= DRAG_THRESHOLD && Math.abs(sdy) <= DRAG_THRESHOLD) return;
+      didDrag.current = true;
+
       const z = zoomRef.current || 1;
-      const dx = (e.clientX - dragRef.current.startX) / z;
-      const dy = (e.clientY - dragRef.current.startY) / z;
-
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        didDrag.current = true;
-      }
-
-      const newX = dragRef.current.origX + dx;
-      const newY = dragRef.current.origY + dy;
+      const newX = dragRef.current.origX + sdx / z;
+      const newY = dragRef.current.origY + sdy / z;
 
       const now = Date.now();
       if (now - lastSend.current > 30) {

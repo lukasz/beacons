@@ -583,8 +583,10 @@ export default function Board() {
   const marqueeRef = useRef<{ boardX: number; boardY: number; screenStartX: number; screenStartY: number } | null>(null);
   const [grabMode, setGrabMode] = useState(false);
 
-  // Drag-selected-items state
-  const selDragRef = useRef<{ startX: number; startY: number; snaps: { type: string; id: string; x: number; y: number }[] } | null>(null);
+  // Drag-selected-items state — `moved` flips to true once the pointer has
+  // travelled past DRAG_THRESHOLD in screen space; until then we emit nothing
+  // so that a plain click never broadcasts a move.
+  const selDragRef = useRef<{ startX: number; startY: number; moved: boolean; snaps: { type: string; id: string; x: number; y: number }[] } | null>(null);
 
   // Image resize state
   const imgResizeRef = useRef<{ id: string; startX: number; startY: number; origW: number; origH: number; origX: number; origY: number; corner: string } | null>(null);
@@ -1082,7 +1084,7 @@ export default function Board() {
           } else if (img) {
             snaps.push({ type: 'image', id: clickedTarget.id, x: img.x, y: img.y });
           }
-          selDragRef.current = { startX: e.clientX, startY: e.clientY, snaps };
+          selDragRef.current = { startX: e.clientX, startY: e.clientY, moved: false, snaps };
           return;
         }
       }
@@ -1114,7 +1116,7 @@ export default function Board() {
               if (img) snaps.push({ type: 'image', id: item.id, x: img.x, y: img.y });
             }
           }
-          selDragRef.current = { startX: e.clientX, startY: e.clientY, snaps };
+          selDragRef.current = { startX: e.clientX, startY: e.clientY, moved: false, snaps };
           return;
         }
       }
@@ -1199,9 +1201,14 @@ export default function Board() {
 
       // Selection drag
       if (selDragRef.current) {
+        const sdx = e.clientX - selDragRef.current.startX;
+        const sdy = e.clientY - selDragRef.current.startY;
+        if (!selDragRef.current.moved && Math.abs(sdx) <= DRAG_THRESHOLD && Math.abs(sdy) <= DRAG_THRESHOLD) return;
+        selDragRef.current.moved = true;
+
         const z = zoomRef.current || 1;
-        const dx = (e.clientX - selDragRef.current.startX) / z;
-        const dy = (e.clientY - selDragRef.current.startY) / z;
+        const dx = sdx / z;
+        const dy = sdy / z;
         for (const snap of selDragRef.current.snaps) {
           if (snap.type === 'postit') {
             send('move_postit', { id: snap.id, x: snap.x + dx, y: snap.y + dy });

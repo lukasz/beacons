@@ -3,6 +3,8 @@ import { useBoard } from '../hooks/useBoard';
 import type { Group } from '../types';
 import { zoomRef } from '../zoomRef';
 
+const DRAG_THRESHOLD = 4;
+
 const RANK_MEDALS = ['', '\u{1F947}', '\u{1F948}', '\u{1F949}'];
 
 function ordinal(n: number) {
@@ -28,7 +30,7 @@ export default function GroupLabelComponent({ group, voteCount, canVote, canUnvo
   const { send } = useBoard();
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(group.label);
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(null);
   const lastSend = useRef(0);
 
   const handlePointerDown = useCallback(
@@ -42,6 +44,7 @@ export default function GroupLabelComponent({ group, voteCount, canVote, canUnvo
         startY: e.clientY,
         origX: group.x,
         origY: group.y,
+        moved: false,
       };
     },
     [editing, selected, votingActive, group.x, group.y],
@@ -50,9 +53,14 @@ export default function GroupLabelComponent({ group, voteCount, canVote, canUnvo
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!dragRef.current) return;
+      const sdx = e.clientX - dragRef.current.startX;
+      const sdy = e.clientY - dragRef.current.startY;
+      if (!dragRef.current.moved && Math.abs(sdx) <= DRAG_THRESHOLD && Math.abs(sdy) <= DRAG_THRESHOLD) return;
+      dragRef.current.moved = true;
+
       const z = zoomRef.current || 1;
-      const dx = (e.clientX - dragRef.current.startX) / z;
-      const dy = (e.clientY - dragRef.current.startY) / z;
+      const dx = sdx / z;
+      const dy = sdy / z;
 
       const now = Date.now();
       if (now - lastSend.current > 30) {

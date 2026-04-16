@@ -4,6 +4,8 @@ import type { Section as SectionType } from '../types';
 import { COLORS } from '../types';
 import { zoomRef } from '../zoomRef';
 
+const DRAG_THRESHOLD = 4;
+
 function screenToCanvas(screenX: number, screenY: number, sectionX: number, sectionY: number, rect: DOMRect) {
   const z = zoomRef.current || 1;
   return {
@@ -57,7 +59,7 @@ export default function SectionComponent({ section, selected, grabMode, votingAc
     }
     mountedRef.current = true;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number; childSnap: { id: string; x: number; y: number }[]; groupSnap: { id: string; x: number; y: number }[] } | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number; childSnap: { id: string; x: number; y: number }[]; groupSnap: { id: string; x: number; y: number }[]; moved: boolean } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
   const lastSend = useRef(0);
 
@@ -105,6 +107,7 @@ export default function SectionComponent({ section, selected, grabMode, votingAc
         origY: section.y,
         childSnap,
         groupSnap,
+        moved: false,
       };
     },
     [editingTitle, selected, grabMode, votingActive, section.x, section.y, section.id, state.postIts, state.groups],
@@ -113,13 +116,18 @@ export default function SectionComponent({ section, selected, grabMode, votingAc
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!dragRef.current) return;
+      const sdx = e.clientX - dragRef.current.startX;
+      const sdy = e.clientY - dragRef.current.startY;
+      if (!dragRef.current.moved && Math.abs(sdx) <= DRAG_THRESHOLD && Math.abs(sdy) <= DRAG_THRESHOLD) return;
+      dragRef.current.moved = true;
+
       const now = Date.now();
       if (now - lastSend.current < 30) return;
       lastSend.current = now;
 
       const z = zoomRef.current || 1;
-      const dx = (e.clientX - dragRef.current.startX) / z;
-      const dy = (e.clientY - dragRef.current.startY) / z;
+      const dx = sdx / z;
+      const dy = sdy / z;
 
       sendUpdate({
         x: dragRef.current.origX + dx,
@@ -140,8 +148,9 @@ export default function SectionComponent({ section, selected, grabMode, votingAc
   );
 
   const handlePointerUp = useCallback(() => {
-    // Final position sync — send one last update without throttle
-    if (dragRef.current) {
+    // Final position sync — send one last update without throttle, but only
+    // if the pointer actually dragged. A bare click must not emit moves.
+    if (dragRef.current && dragRef.current.moved) {
       // Ensure children are at their final positions
       for (const child of dragRef.current.childSnap) {
         const p = state.postIts[child.id];
