@@ -83,6 +83,7 @@ type TimerState struct {
 	RemainingSec int   `json:"remainingSec"`
 	Running      bool  `json:"running"`
 	StartedAt    int64 `json:"startedAt,omitempty"`
+	Open         bool  `json:"open,omitempty"`
 }
 
 type VoteSession struct {

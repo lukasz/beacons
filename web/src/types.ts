@@ -58,6 +58,7 @@ export interface TimerState {
   remainingSec: number;
   running: boolean;
   startedAt?: number;
+  open?: boolean;
 }
 
 export interface VoteSession {

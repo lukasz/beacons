@@ -206,9 +206,18 @@ export default function Board() {
   const getVoteCount = useCallback(
     (targetId: string) => {
       if (!vote) return 0;
-      return vote.votes[targetId]?.length || 0;
+      const voters = vote.votes[targetId];
+      if (!voters) return 0;
+      // During active voting, each user only sees their OWN votes per target.
+      // The aggregate tally is revealed only after the vote is closed.
+      if (!vote.closed) {
+        let own = 0;
+        for (const v of voters) if (v === userId) own++;
+        return own;
+      }
+      return voters.length;
     },
-    [vote],
+    [vote, userId],
   );
 
   // For post-its in groups, get the group's vote count
@@ -482,7 +491,13 @@ export default function Board() {
   const [creationMode, setCreationMode] = useState<CreationMode>(null);
   const [ctxPostItColor, setCtxPostItColor] = useState(0);
   const [ctxSectionColor, setCtxSectionColor] = useState(0);
-  const [timerOpen, setTimerOpen] = useState(false);
+  const timerOpen = !!state.timer.open;
+  const toggleTimerOpen = useCallback(() => {
+    send('timer_open', { open: !state.timer.open });
+  }, [send, state.timer.open]);
+  const closeTimer = useCallback(() => {
+    send('timer_open', { open: false });
+  }, [send]);
   const [votePanelOpen, setVotePanelOpen] = useState(false);
   const [giphyOpen, setGiphyOpen] = useState(false);
   const [exportCopied, setExportCopied] = useState(false);
@@ -1759,7 +1774,7 @@ export default function Board() {
           activeMode={creationMode}
           onModeChange={setCreationMode}
           timerOpen={timerOpen}
-          onToggleTimer={() => setTimerOpen((o) => !o)}
+          onToggleTimer={toggleTimerOpen}
           hasVoteActivity={votePanelOpen}
           stickyColorIdx={ctxPostItColor}
           onStickyColorChange={setCtxPostItColor}
@@ -1800,7 +1815,7 @@ export default function Board() {
 
         {/* Timer floating panel */}
         {!templateMode && timerOpen && (
-          <Timer onClose={() => setTimerOpen(false)} />
+          <Timer onClose={closeTimer} />
         )}
 
         {/* Creation mode banner */}

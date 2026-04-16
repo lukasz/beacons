@@ -38,6 +38,7 @@ type Action =
   | { type: 'timer_pause'; payload: TimerState }
   | { type: 'timer_reset'; payload: TimerState }
   | { type: 'timer_tick'; payload: TimerState }
+  | { type: 'timer_open'; payload: TimerState }
   | { type: 'vote_update'; payload: VoteSession }
   | { type: 'vote_dismiss'; payload: VoteSession[] }
   | { type: 'vote_history'; payload: VoteSession[] }
@@ -127,6 +128,7 @@ function boardReducer(state: BoardState, action: Action): BoardState {
     case 'timer_pause':
     case 'timer_reset':
     case 'timer_tick':
+    case 'timer_open':
       return { ...state, timer: action.payload };
 
     case 'vote_update':

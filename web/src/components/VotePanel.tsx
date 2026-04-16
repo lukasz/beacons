@@ -121,13 +121,7 @@ export default function VotePanel() {
     return getResults(viewingVote);
   }, [viewingVote, getResults]);
 
-  const activeResults = useMemo(() => {
-    if (!vote || vote.closed) return [];
-    return getResults(vote);
-  }, [vote, getResults]);
-
   const maxViewingVotes = viewingResults.length > 0 ? viewingResults[0].count : 1;
-  const maxActiveVotes = activeResults.length > 0 ? activeResults[0].count : 1;
 
   // Notify board of which vote to show rank badges for (and visibility)
   useEffect(() => {
@@ -228,23 +222,8 @@ export default function VotePanel() {
             </>
           )}
 
-          {activeResults.length > 0 && (
-            <>
-              <div className="vote-section-label">Current Tally</div>
-              {activeResults.map((r) => (
-                <div key={r.targetId} className="vote-result-item">
-                  <div style={{ flex: 1 }}>
-                    <div className="vote-result-label">{r.label}</div>
-                    <div
-                      className="vote-result-bar"
-                      style={{ width: `${(r.count / maxActiveVotes) * 100}%` }}
-                    />
-                  </div>
-                  <span className="vote-result-count">{r.count}</span>
-                </div>
-              ))}
-            </>
-          )}
+          {/* Live tally is intentionally hidden during active voting —
+              totals are revealed only once the vote is closed. */}
         </>
       )}
 

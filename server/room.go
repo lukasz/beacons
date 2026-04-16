@@ -85,10 +85,11 @@ func (r *Room) Run() {
 			r.clients[client.userID] = client
 			cleanupTimer.Stop()
 			if existing, ok := r.state.Users[client.userID]; ok {
+				// Returning user: preserve their hide-mode preference.
 				existing.Name = client.name
 				existing.Connected = true
-				existing.HideMode = true
 			} else {
+				// First-time entry: hide cards by default.
 				r.state.Users[client.userID] = &User{
 					ID:        client.userID,
 					Name:      client.name,
@@ -96,10 +97,11 @@ func (r *Room) Run() {
 					HideMode:  true,
 				}
 			}
-			// Hide this user's post-its by default
+			// Align this user's post-its with their current HideMode.
+			hide := r.state.Users[client.userID].HideMode
 			for _, p := range r.state.PostIts {
 				if p.AuthorID == client.userID {
-					p.Hidden = true
+					p.Hidden = hide
 				}
 			}
 			client.sendSync(r.state)
@@ -287,6 +289,16 @@ func (r *Room) handleMessage(cm ClientMessage) {
 		r.state.Timer.RemainingSec = r.state.Timer.DurationSec
 		r.stopTimer()
 		r.broadcastMsg(MsgTimerReset, r.state.Timer)
+
+	case MsgTimerOpen:
+		var payload struct {
+			Open bool `json:"open"`
+		}
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+			return
+		}
+		r.state.Timer.Open = payload.Open
+		r.broadcastMsg(MsgTimerOpen, r.state.Timer)
 
 	case MsgVoteStart:
 		vote, err := r.state.StartVote(msg.Payload, cm.client.userID)

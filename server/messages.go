@@ -30,6 +30,7 @@ const (
 	MsgTimerPause    = "timer_pause"
 	MsgTimerReset    = "timer_reset"
 	MsgTimerTick     = "timer_tick"
+	MsgTimerOpen     = "timer_open"
 	MsgVoteStart     = "vote_start"
 	MsgVoteCast      = "vote_cast"
 	MsgVoteUncast    = "vote_uncast"
