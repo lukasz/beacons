@@ -4863,17 +4863,17 @@ a.cycle-stats-link:hover {
   position: relative;
 }
 .vote-take-time-tip {
-  position: absolute;
-  top: 50%;
-  right: calc(100% + 14px);
-  transform: translateY(-50%);
+  /* top/left supplied inline; we anchor the right-middle of the bubble
+     to the given point so it sits to the LEFT of the "I'm Done" button. */
+  position: fixed;
   width: 240px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
   box-shadow: 0 6px 20px var(--shadow-lg);
-  z-index: 1200;
+  z-index: 2100;
+  transform: translate(-100%, -50%);
   animation: vote-tip-slide 0.18s ease-out;
 }
 .vote-take-time-tip-arrow {
@@ -4893,8 +4893,8 @@ a.cycle-stats-link:hover {
   color: var(--text);
 }
 @keyframes vote-tip-slide {
-  from { opacity: 0; transform: translateY(-50%) translateX(8px); }
-  to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+  from { opacity: 0; transform: translate(-100%, -50%) translateX(8px); }
+  to   { opacity: 1; transform: translate(-100%, -50%) translateX(0); }
 }
 
 /* Vote prompt modals (all-cast, everyone-done) */

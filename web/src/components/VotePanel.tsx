@@ -63,9 +63,32 @@ export default function VotePanel() {
   const [allCastModal, setAllCastModal] = useState(false);
   const [takeTimeTip, setTakeTimeTip] = useState(false);
   const [everyoneDoneModal, setEveryoneDoneModal] = useState(false);
+  const [tipRect, setTipRect] = useState<{ top: number; left: number } | null>(null);
+  const doneBtnRef = useRef<HTMLButtonElement>(null);
   // Track prompts already shown for each vote id so we don't nag on unvote/re-vote.
   const allCastShownFor = useRef<string | null>(null);
   const everyoneDoneShownFor = useRef<string | null>(null);
+
+  // Recompute the tooltip's anchor position whenever it's visible.
+  useEffect(() => {
+    if (!takeTimeTip) {
+      setTipRect(null);
+      return;
+    }
+    const update = () => {
+      const el = doneBtnRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setTipRect({ top: r.top + r.height / 2, left: r.left - 14 });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [takeTimeTip]);
 
   // Auto-open when a vote starts or results come in
   useEffect(() => {
@@ -240,24 +263,14 @@ export default function VotePanel() {
 
           {!isDone ? (
             <div className="vote-done-wrap">
-              <button className="btn btn-primary btn-small" style={{ width: '100%' }} onClick={() => send('vote_done', {})}>
+              <button
+                ref={doneBtnRef}
+                className="btn btn-primary btn-small"
+                style={{ width: '100%' }}
+                onClick={() => send('vote_done', {})}
+              >
                 I'm Done Voting
               </button>
-              {takeTimeTip && (
-                <div className="vote-take-time-tip" role="dialog">
-                  <div className="vote-take-time-tip-arrow" />
-                  <div className="vote-take-time-tip-text">
-                    That's cool, take your time! You can click here once you're done.
-                  </div>
-                  <button
-                    className="btn btn-primary btn-small"
-                    style={{ width: '100%', marginTop: 8 }}
-                    onClick={() => setTakeTimeTip(false)}
-                  >
-                    Got it!
-                  </button>
-                </div>
-              )}
             </div>
           ) : (
             <div style={{ fontSize: '0.85rem', color: 'var(--color-3)', textAlign: 'center' }}>You're done!</div>
@@ -351,6 +364,28 @@ export default function VotePanel() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Take-your-time tooltip, positioned next to the "I'm Done Voting" button
+          via fixed coords so the vote-panel's overflow doesn't clip it. */}
+      {takeTimeTip && tipRect && (
+        <div
+          className="vote-take-time-tip"
+          role="dialog"
+          style={{ top: tipRect.top, left: tipRect.left }}
+        >
+          <div className="vote-take-time-tip-arrow" />
+          <div className="vote-take-time-tip-text">
+            That's cool, take your time! You can click here once you're done.
+          </div>
+          <button
+            className="btn btn-primary btn-small"
+            style={{ width: '100%', marginTop: 8 }}
+            onClick={() => setTakeTimeTip(false)}
+          >
+            Got it!
+          </button>
         </div>
       )}
 
