@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useBoard } from '../hooks/useBoard';
 import type { VoteSession } from '../types';
 
@@ -60,6 +60,12 @@ export default function VotePanel() {
   const [votesPerUser, setVotesPerUser] = useState(3);
   const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
   const [ranksVisible, setRanksVisible] = useState(true);
+  const [allCastModal, setAllCastModal] = useState(false);
+  const [takeTimeTip, setTakeTimeTip] = useState(false);
+  const [everyoneDoneModal, setEveryoneDoneModal] = useState(false);
+  // Track prompts already shown for each vote id so we don't nag on unvote/re-vote.
+  const allCastShownFor = useRef<string | null>(null);
+  const everyoneDoneShownFor = useRef<string | null>(null);
 
   // Auto-open when a vote starts or results come in
   useEffect(() => {
@@ -132,6 +138,43 @@ export default function VotePanel() {
     window.dispatchEvent(new CustomEvent('vote-ranks-visibility', { detail: ranksVisible }));
   }, [ranksVisible]);
 
+  // ── Prompts ──
+  // When the current user has spent all their votes (and isn't already marked done),
+  // show a modal asking if they're finished. Only fires once per vote session; we
+  // won't nag them again if they unvote and re-vote.
+  useEffect(() => {
+    if (!vote || vote.closed) return;
+    const isDoneNow = !!vote.doneUsers[userId];
+    if (isDoneNow) return;
+    const castAll = vote.votesPerUser > 0 && myVoteCount >= vote.votesPerUser;
+    if (castAll && allCastShownFor.current !== vote.id) {
+      allCastShownFor.current = vote.id;
+      setAllCastModal(true);
+    }
+  }, [vote, myVoteCount, userId]);
+
+  // When every connected user has clicked "I'm done voting", ask the organizer
+  // if they're ready to reveal the results.
+  useEffect(() => {
+    if (!vote || vote.closed || !isOrganizer) return;
+    const connected = Object.values(state.users).filter((u) => u.connected);
+    if (connected.length === 0) return;
+    const everyoneDone = connected.every((u) => vote.doneUsers[u.id]);
+    if (everyoneDone && everyoneDoneShownFor.current !== vote.id) {
+      everyoneDoneShownFor.current = vote.id;
+      setEveryoneDoneModal(true);
+    }
+  }, [vote, state.users, isOrganizer]);
+
+  // Reset per-vote prompt state when a new vote starts / current vote goes away.
+  useEffect(() => {
+    if (!vote || vote.closed) {
+      setAllCastModal(false);
+      setEveryoneDoneModal(false);
+      setTakeTimeTip(false);
+    }
+  }, [vote?.id, vote?.closed]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!open) return null;
 
   const votingActive = !!vote && !vote.closed;
@@ -196,9 +239,26 @@ export default function VotePanel() {
           </div>
 
           {!isDone ? (
-            <button className="btn btn-primary btn-small" style={{ width: '100%' }} onClick={() => send('vote_done', {})}>
-              I'm Done Voting
-            </button>
+            <div className="vote-done-wrap">
+              <button className="btn btn-primary btn-small" style={{ width: '100%' }} onClick={() => send('vote_done', {})}>
+                I'm Done Voting
+              </button>
+              {takeTimeTip && (
+                <div className="vote-take-time-tip" role="dialog">
+                  <div className="vote-take-time-tip-arrow" />
+                  <div className="vote-take-time-tip-text">
+                    That's cool, take your time! You can click here once you're done.
+                  </div>
+                  <button
+                    className="btn btn-primary btn-small"
+                    style={{ width: '100%', marginTop: 8 }}
+                    onClick={() => setTakeTimeTip(false)}
+                  >
+                    Got it!
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <div style={{ fontSize: '0.85rem', color: 'var(--color-3)', textAlign: 'center' }}>You're done!</div>
           )}
@@ -291,6 +351,68 @@ export default function VotePanel() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: user cast all their votes */}
+      {allCastModal && (
+        <div className="vote-modal-overlay" onClick={() => setAllCastModal(false)}>
+          <div className="vote-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="vote-modal-title">All votes cast</div>
+            <div className="vote-modal-body">
+              You've used all your votes. Are you done, or do you want another look?
+            </div>
+            <div className="vote-modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setAllCastModal(false);
+                  setTakeTimeTip(true);
+                }}
+              >
+                Nah, let me have another look
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  send('vote_done', {});
+                  setAllCastModal(false);
+                  setTakeTimeTip(false);
+                }}
+              >
+                Yeah, I'm done!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: organizer sees every connected user marked done */}
+      {everyoneDoneModal && (
+        <div className="vote-modal-overlay" onClick={() => setEveryoneDoneModal(false)}>
+          <div className="vote-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="vote-modal-title">Ready to reveal?</div>
+            <div className="vote-modal-body">
+              Seems like everyone is done voting, shall we reveal the results?
+            </div>
+            <div className="vote-modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setEveryoneDoneModal(false)}
+              >
+                Not yet
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  send('vote_close', {});
+                  setEveryoneDoneModal(false);
+                }}
+              >
+                Yes, reveal!
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

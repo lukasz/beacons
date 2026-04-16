@@ -4858,6 +4858,95 @@ a.cycle-stats-link:hover {
   background: var(--bg-overlay);
 }
 
+/* "I'm Done Voting" wrapper + take-your-time tooltip */
+.vote-done-wrap {
+  position: relative;
+}
+.vote-take-time-tip {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 14px);
+  transform: translateY(-50%);
+  width: 240px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 20px var(--shadow-lg);
+  z-index: 1200;
+  animation: vote-tip-slide 0.18s ease-out;
+}
+.vote-take-time-tip-arrow {
+  position: absolute;
+  top: 50%;
+  right: -7px;
+  transform: translateY(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+.vote-take-time-tip-text {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--text);
+}
+@keyframes vote-tip-slide {
+  from { opacity: 0; transform: translateY(-50%) translateX(8px); }
+  to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+/* Vote prompt modals (all-cast, everyone-done) */
+.vote-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: vote-modal-fade 0.15s ease-out;
+}
+.vote-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+  width: min(420px, calc(100vw - 48px));
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: vote-modal-pop 0.18s ease-out;
+}
+.vote-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--tem-primary);
+  letter-spacing: 0.02em;
+}
+.vote-modal-body {
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+.vote-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.vote-modal-actions .btn { min-width: 140px; }
+@keyframes vote-modal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes vote-modal-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 .vote-config {
   display: flex;
   flex-direction: column;
