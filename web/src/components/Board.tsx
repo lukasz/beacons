@@ -1382,10 +1382,28 @@ export default function Board() {
     type Move = { msg: string; data: Record<string, unknown> };
     const moves: Move[] = [];
 
-    // Grid layout helper — returns relative offsets
+    // Grid layout helper — picks the column count whose resulting
+    // (width × height) is closest to square, given a non-square item size.
+    // e.g. for 160×110 post-its a 3-wide grid is often flatter than a
+    // 2-wide grid; this chooses whichever makes the content most square.
     function grid(count: number, itemW: number, itemH: number, gap: number) {
       if (count === 0) return { cols: 0, rows: 0, w: 0, h: 0, pos: [] as { x: number; y: number }[] };
-      const cols = Math.ceil(Math.sqrt(count));
+      let bestCols = 1;
+      let bestDiff = Infinity;
+      for (let c = 1; c <= count; c++) {
+        const r = Math.ceil(count / c);
+        const w = c * itemW + Math.max(0, c - 1) * gap;
+        const h = r * itemH + Math.max(0, r - 1) * gap;
+        const diff = Math.abs(w - h);
+        // Prefer a slightly taller layout over a wider one on ties — boards
+        // usually have horizontal real-estate to spare; it's the flat-wide
+        // shape that feels wrong.
+        if (diff < bestDiff || (diff === bestDiff && c < bestCols)) {
+          bestDiff = diff;
+          bestCols = c;
+        }
+      }
+      const cols = bestCols;
       const rows = Math.ceil(count / cols);
       const pos: { x: number; y: number }[] = [];
       for (let i = 0; i < count; i++) {
@@ -1435,8 +1453,13 @@ export default function Board() {
         contentH += looseGrid.h;
       }
 
-      const neededW = Math.max(sec.w, contentW + SEC_PAD * 2);
-      const neededH = Math.max(200, contentH + SEC_PAD_TOP + SEC_PAD);
+      // Size sections purely from their content so OCD can shrink wide
+      // sections back to a square-ish shape. A small floor keeps empty
+      // sections usable.
+      const MIN_SEC_W = 300;
+      const MIN_SEC_H = 200;
+      const neededW = Math.max(MIN_SEC_W, contentW + SEC_PAD * 2);
+      const neededH = Math.max(MIN_SEC_H, contentH + SEC_PAD_TOP + SEC_PAD);
       secLayouts.push({ sec, w: neededW, h: neededH });
     }
 
