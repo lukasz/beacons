@@ -7349,3 +7349,107 @@ input[type="number"] {
   gap: 10px;
   padding-top: 4px;
 }
+
+/* ── DemoLinear ── */
+.demo-linear { gap: 12px; }
+.demo-linear-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.demo-linear-health {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(74, 222, 128, 0.15);
+  color: #16a34a;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.demo-linear-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.demo-linear-progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-overlay);
+  overflow: hidden;
+}
+.demo-linear-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tem-primary), var(--tem-primary-light, var(--tem-primary)));
+  border-radius: 999px;
+}
+.demo-linear-progress-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  width: 36px;
+  text-align: right;
+}
+.demo-linear-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.demo-linear-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-overlay);
+}
+.demo-linear-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.demo-linear-value.done { color: #16a34a; }
+.demo-linear-value.warn { color: #d97706; }
+.demo-linear-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.demo-linear-people {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+.demo-linear-person {
+  display: grid;
+  grid-template-columns: 60px 1fr 38px;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+}
+.demo-linear-person-name {
+  color: var(--text);
+  font-weight: 600;
+}
+.demo-linear-person-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-overlay);
+  overflow: hidden;
+}
+.demo-linear-person-fill {
+  height: 100%;
+  background: var(--tem-primary);
+  border-radius: 999px;
+}
+.demo-linear-person-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}

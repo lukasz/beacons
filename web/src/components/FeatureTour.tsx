@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type DemoKind = 'board' | 'timer' | 'vote' | 'hide' | 'ocd';
+type DemoKind = 'board' | 'timer' | 'vote' | 'hide' | 'ocd' | 'linear';
 
 interface StaticShot {
   kind: 'image';
@@ -47,7 +47,7 @@ const FEATURES: Feature[] = [
     title: 'Linear context on the board',
     body:
       "Connect a team, and cycle progress, scope, and assignees show up right next to the retro. Pull last sprint's numbers into the conversation without switching tabs.",
-    slot: { kind: 'image', src: '/features/linear-sync.png', alt: 'Linear cycle stats panel on a board' },
+    slot: { kind: 'demo', demo: 'linear' },
   },
   {
     title: 'One button for clean-up',
@@ -91,7 +91,67 @@ function FeatureDemo({ kind }: { kind: DemoKind }) {
     case 'vote': return <DemoVote />;
     case 'hide': return <DemoHide />;
     case 'ocd': return <DemoOCD />;
+    case 'linear': return <DemoLinear />;
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// DemoLinear — a faithful mock of the Linear cycle-stats panel
+// ─────────────────────────────────────────────────────────────
+function DemoLinear() {
+  const completed = 18;
+  const total = 24;
+  const pct = Math.round((completed / total) * 100);
+  const people = [
+    { name: 'Ana',    done: 6, total: 7 },
+    { name: 'Ben',    done: 4, total: 6 },
+    { name: 'Chris',  done: 5, total: 6 },
+    { name: 'Dana',   done: 3, total: 5 },
+  ];
+  return (
+    <div className="demo-linear demo-shell">
+      <div className="demo-shell-title">Cycle 24 · Platform</div>
+      <div className="demo-linear-meta">
+        <span>Mon 14 Apr – Fri 25 Apr</span>
+        <span className="demo-linear-health">On track</span>
+      </div>
+      <div className="demo-linear-progress">
+        <div className="demo-linear-progress-bar">
+          <div className="demo-linear-progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="demo-linear-progress-label">{pct}%</span>
+      </div>
+      <div className="demo-linear-grid">
+        <div className="demo-linear-cell">
+          <span className="demo-linear-value">22</span>
+          <span className="demo-linear-label">Starting</span>
+        </div>
+        <div className="demo-linear-cell">
+          <span className="demo-linear-value">{total}</span>
+          <span className="demo-linear-label">Final scope</span>
+        </div>
+        <div className="demo-linear-cell">
+          <span className="demo-linear-value warn">+9%</span>
+          <span className="demo-linear-label">Scope change</span>
+        </div>
+        <div className="demo-linear-cell">
+          <span className="demo-linear-value done">{completed}</span>
+          <span className="demo-linear-label">Completed</span>
+        </div>
+      </div>
+      <div className="demo-linear-people">
+        {people.map((p) => (
+          <div key={p.name} className="demo-linear-person">
+            <span className="demo-linear-person-name">{p.name}</span>
+            <div className="demo-linear-person-bar">
+              <div className="demo-linear-person-fill" style={{ width: `${(p.done / p.total) * 100}%` }} />
+            </div>
+            <span className="demo-linear-person-count">{p.done}/{p.total}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
