@@ -1,4 +1,5 @@
 import { useTheme } from '../hooks/useTheme';
+import FeatureTour from './FeatureTour';
 
 interface Props {
   onSignIn: () => void;
@@ -35,6 +36,8 @@ export default function SignIn({ onSignIn }: Props) {
         </svg>
         Sign in with Google
       </button>
+
+      <FeatureTour />
     </div>
   );
 }
