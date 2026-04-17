@@ -109,12 +109,10 @@ body {
 .landing {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  min-height: 100vh;
+  justify-content: center;
+  height: 100vh;
   flex-direction: column;
   gap: 20px;
-  padding-top: max(8vh, 48px);
-  padding-bottom: 64px;
 }
 
 .landing-logo {
@@ -6955,6 +6953,87 @@ input[type="number"] {
 }
 .rice-table strong {
   color: var(--text);
+}
+
+/* ============================================
+   TADA — public marketing landing at /tada
+   ============================================ */
+.tada {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+.tada-topbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+}
+.tada-hero {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: max(10vh, 72px) 24px 40px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.tada-hero-logo {
+  height: 140px;
+  margin-bottom: -22px;
+}
+.tada-hero h1 {
+  font-size: 3.2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--tem-primary), var(--tem-primary-light, var(--tem-primary)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.tada-hero-tagline {
+  color: var(--tem-primary);
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+.tada-hero-sub {
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  max-width: 580px;
+  margin: 12px 0 20px;
+}
+.tada-hero-cta {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.tada-cta-primary {
+  padding: 12px 22px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.tada-footer {
+  max-width: 780px;
+  margin: 40px auto 80px;
+  padding: 0 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.tada-footer-note {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  max-width: 520px;
+  line-height: 1.4;
 }
 
 /* ============================================

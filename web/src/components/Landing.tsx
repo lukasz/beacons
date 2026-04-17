@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useTheme } from '../hooks/useTheme';
 import type { AuthUser } from '../hooks/useAuth';
-import FeatureTour from './FeatureTour';
 
 interface Props {
   user: AuthUser;
@@ -97,8 +96,6 @@ export default function Landing({ user, defaultRoomId, onCreateRoom, onJoinRoom,
           </div>
         </div>
       </div>
-
-      <FeatureTour />
     </div>
   );
 }

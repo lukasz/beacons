@@ -7,6 +7,7 @@ import GuestJoin from './components/GuestJoin';
 import Dashboard from './components/Dashboard';
 import Board from './components/Board';
 import RiceCalculator from './components/RiceCalculator';
+import TadaLanding from './components/TadaLanding';
 
 // Initialize theme from localStorage before first render
 (() => {
@@ -19,7 +20,8 @@ import RiceCalculator from './components/RiceCalculator';
 type NavState =
   | { view: 'dashboard'; tab?: string }
   | { view: 'board'; roomId: string; template?: boolean }
-  | { view: 'rice' };
+  | { view: 'rice' }
+  | { view: 'tada' };
 
 function parseLocation(): NavState {
   const path = window.location.pathname;
@@ -31,10 +33,11 @@ function parseLocation(): NavState {
   }
 
   if (path === '/rice') return { view: 'rice' };
+  if (path === '/tada') return { view: 'tada' };
 
   // Legacy: bare /<roomId>
   const bare = path.slice(1);
-  if (bare && /^[a-zA-Z0-9_-]{4,}$/.test(bare) && !['boards', 'templates', 'actions', 'teams', 'rice'].includes(bare)) {
+  if (bare && /^[a-zA-Z0-9_-]{4,}$/.test(bare) && !['boards', 'templates', 'actions', 'teams', 'rice', 'tada'].includes(bare)) {
     return { view: 'board', roomId: bare };
   }
 
@@ -44,6 +47,7 @@ function parseLocation(): NavState {
 
 function navUrl(s: NavState): string {
   if (s.view === 'rice') return '/rice';
+  if (s.view === 'tada') return '/tada';
   if (s.view === 'board') {
     const base = `/board/${s.roomId}`;
     return s.template ? `${base}?mode=template` : base;
@@ -268,6 +272,16 @@ export default function App() {
         <img src="/logo.png" alt="Beacons" className="landing-logo" />
         <h1>Beacons</h1>
       </div>
+    );
+  }
+
+  // Public marketing page — works signed-in or signed-out
+  if (navState.view === 'tada') {
+    return (
+      <TadaLanding
+        isAuthed={!!user}
+        onPrimary={() => (user ? navigate({ view: 'dashboard' }) : signIn())}
+      />
     );
   }
 
