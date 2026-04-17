@@ -7241,7 +7241,7 @@ input[type="number"] {
 
 /* ── DemoBoard ── */
 .demo-board {
-  height: 340px;
+  height: 380px;
   overflow: hidden;
 }
 .demo-group-outline {

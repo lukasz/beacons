@@ -257,14 +257,14 @@ const STICKY_H = 78;
 function DemoBoard() {
   const [stickies, setStickies] = useState<DemoStickyData[]>([
     // Grouped pair (QA team)
-    { id: 'a', text: 'QA dev starts next week', author: 'Ana',   colorIdx: 2, groupId: 'g1', x: 30,  y: 76 },
-    { id: 'b', text: 'New QA member joined',    author: 'Ben',   colorIdx: 2, groupId: 'g1', x: 150, y: 96 },
+    { id: 'a', text: 'QA dev starts next week', author: 'Ana',   colorIdx: 2, groupId: 'g1', x: 30,  y: 128 },
+    { id: 'b', text: 'New QA member joined',    author: 'Ben',   colorIdx: 2, groupId: 'g1', x: 150, y: 148 },
     // Loose stickies
-    { id: 'c', text: 'Standups ran long',       author: 'Chris', colorIdx: 0, x: 320, y: 68 },
-    { id: 'd', text: 'Blockers went unseen',    author: 'Dana',  colorIdx: 0, x: 400, y: 132 },
+    { id: 'c', text: 'Standups ran long',       author: 'Chris', colorIdx: 0, x: 320, y: 108 },
+    { id: 'd', text: 'Blockers went unseen',    author: 'Dana',  colorIdx: 0, x: 400, y: 176 },
   ]);
   const [groups, setGroups] = useState<DemoGroupData[]>([
-    { id: 'g1', label: 'QA team', x: 36, y: 46 },
+    { id: 'g1', label: 'QA team', x: 36, y: 96 },
   ]);
 
   const dragRef = useRef<null | (
@@ -327,7 +327,7 @@ function DemoBoard() {
             const dx = e.clientX - d.startX;
             const dy = e.clientY - d.startY;
             const nx = Math.max(4, Math.min(540 - 80, d.origX + dx));
-            const ny = Math.max(4, Math.min(320 - 30, d.origY + dy));
+            const ny = Math.max(70, Math.min(360 - 30, d.origY + dy));
             const actualDx = nx - d.origX;
             const actualDy = ny - d.origY;
             setGroups((prev) => prev.map((x) => (x.id === g.id ? { ...x, x: nx, y: ny } : x)));
@@ -359,7 +359,7 @@ function DemoBoard() {
             const dx = e.clientX - d.startX;
             const dy = e.clientY - d.startY;
             const nx = Math.max(4, Math.min(540 - STICKY_W, d.origX + dx));
-            const ny = Math.max(40, Math.min(320 - STICKY_H, d.origY + dy));
+            const ny = Math.max(92, Math.min(360 - STICKY_H, d.origY + dy));
             setStickies((prev) => prev.map((p) => (p.id === s.id ? { ...p, x: nx, y: ny } : p)));
           }}
           onPointerUp={() => { dragRef.current = null; }}
