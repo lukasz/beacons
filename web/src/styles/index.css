@@ -3553,28 +3553,26 @@ body {
 .group-label:hover .delete-btn { opacity: 1; }
 
 .group-outline {
-  fill: rgba(255, 255, 255, 0.03);
-  stroke: var(--text-muted);
-  stroke-width: 2.5;
-  stroke-linejoin: round;
-  stroke-linecap: round;
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 2px solid var(--text-muted);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
   opacity: 0.5;
-  transition: d 0.15s ease-out;
+  pointer-events: none;
+  z-index: 4;
+  transition: transform 0.15s ease-out, width 0.15s ease-out, height 0.15s ease-out,
+              opacity 0.15s, border-color 0.15s, background 0.2s;
 }
-
-.group-outline-hitarea {
-  fill: transparent;
-  stroke: none;
-  cursor: pointer;
+.group-outline.votable {
   pointer-events: auto;
-  transition: fill 0.2s;
+  cursor: pointer;
 }
-.group-outline-hitarea:hover {
-  fill: rgba(255,75,18,0.06);
-}
-.group-outline-hitarea:hover + .group-outline {
-  stroke: var(--tem-primary);
-  opacity: 0.8;
+.group-outline.votable:hover {
+  border-color: var(--tem-primary);
+  opacity: 0.9;
+  background: rgba(255, 75, 18, 0.06);
 }
 
 /* ============================================
