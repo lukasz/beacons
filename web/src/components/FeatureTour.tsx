@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type DemoKind = 'board' | 'timer' | 'vote' | 'hide' | 'ocd' | 'linear';
+type DemoKind = 'board' | 'timer' | 'vote' | 'hide' | 'ocd' | 'linear' | 'actions' | 'markdown' | 'rain' | 'newboard';
 
 interface StaticShot {
   kind: 'image';
@@ -55,6 +55,30 @@ const FEATURES: Feature[] = [
       "Hit OCD and the board tidies itself. Sections resize to their content, stickies settle into square-ish grids, groups stay with their cards. Deep breath.",
     slot: { kind: 'demo', demo: 'ocd' },
   },
+  {
+    title: 'Actions that carry across retros',
+    body:
+      "Captured actions live with the board. Unchecked items from previous retros surface on the next one, so nothing drops off the edge. One click pushes an action to Linear as a real issue, with the link saved back to the card.",
+    slot: { kind: 'demo', demo: 'actions' },
+  },
+  {
+    title: 'Walk away with a clean write-up',
+    body:
+      "The 📝 MD button copies the whole board — sessions, sections, stickies, actions, vote results — as Markdown. Paste it into Notion, Slack, or a PR description. Selective export works too: highlight what matters, copy just that.",
+    slot: { kind: 'demo', demo: 'markdown' },
+  },
+  {
+    title: 'Make it rain',
+    body:
+      "A little celebration goes a long way. Hit an emoji reaction and it rains across everyone's screen, not just yours. Good for 'we shipped', 'happy birthday', or 'we survived that release'.",
+    slot: { kind: 'demo', demo: 'rain' },
+  },
+  {
+    title: 'Start your board, your way',
+    body:
+      "Fire up a blank canvas for an open format, pick a saved template to standardise across the team, or pull a cycle or project straight from Linear so the retro opens with the numbers already on it.",
+    slot: { kind: 'demo', demo: 'newboard' },
+  },
 ];
 
 export default function FeatureTour() {
@@ -92,6 +116,10 @@ function FeatureDemo({ kind }: { kind: DemoKind }) {
     case 'hide': return <DemoHide />;
     case 'ocd': return <DemoOCD />;
     case 'linear': return <DemoLinear />;
+    case 'actions': return <DemoActions />;
+    case 'markdown': return <DemoMarkdown />;
+    case 'rain': return <DemoReactionRain />;
+    case 'newboard': return <DemoNewBoard />;
   }
 }
 
@@ -503,6 +531,255 @@ function DemoOCD() {
       <div className="demo-ocd-controls">
         <button className="demo-btn demo-btn-start" onClick={() => setTidy(true)} disabled={tidy}>🧹 OCD</button>
         <button className="demo-btn" onClick={() => setTidy(false)} disabled={!tidy}>Make it messy</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DemoActions — actions panel with previous-retro carry-over + Linear link
+// ─────────────────────────────────────────────────────────────
+interface DemoAction { id: string; text: string; author: string; done: boolean; linearKey?: string; }
+interface PrevAction { id: string; text: string; author: string; sourceSession: string; }
+function DemoActions() {
+  const [current, setCurrent] = useState<DemoAction[]>([
+    { id: 'a1', text: 'Ship daily cost breakdown to the portal', author: 'Ana',  done: false },
+    { id: 'a2', text: 'Document the new pricing engine flow',    author: 'Ben',  done: true  },
+    { id: 'a3', text: 'Pair with Chris on the invoice audit',    author: 'Dana', done: false },
+  ]);
+  const [showPrev, setShowPrev] = useState(true);
+  const prev: PrevAction[] = [
+    { id: 'p1', text: "Investigate why non-power charges aren't itemised", author: 'Ben', sourceSession: 'Cycle 23 retro' },
+    { id: 'p2', text: 'Automate the weekly RED score rollup',              author: 'Ana', sourceSession: 'Cycle 23 retro' },
+  ];
+
+  const toggle = (id: string) =>
+    setCurrent((p) => p.map((a) => (a.id === id ? { ...a, done: !a.done } : a)));
+  const pushLinear = (id: string) =>
+    setCurrent((p) => p.map((a) => (a.id === id ? { ...a, linearKey: 'ENG-' + (100 + Math.floor(Math.random() * 900)) } : a)));
+
+  return (
+    <div className="demo-actions demo-shell">
+      <div className="demo-shell-title">Actions</div>
+
+      <div className="demo-actions-section-label">This retro</div>
+      {current.map((a) => (
+        <div key={a.id} className={`demo-action ${a.done ? 'done' : ''}`}>
+          <label className="demo-action-check">
+            <input type="checkbox" checked={a.done} onChange={() => toggle(a.id)} />
+            <span className="demo-action-text">{a.text}</span>
+          </label>
+          <div className="demo-action-meta">
+            <span className="demo-action-author">{a.author}</span>
+            {a.linearKey ? (
+              <span className="demo-action-linear-badge">{a.linearKey}</span>
+            ) : (
+              !a.done && (
+                <button className="demo-action-linear-btn" onClick={() => pushLinear(a.id)}>
+                  + Linear
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      ))}
+
+      <div
+        className="demo-actions-section-label demo-actions-section-toggle"
+        onClick={() => setShowPrev((s) => !s)}
+      >
+        <span>From previous retros</span>
+        <span className="demo-actions-section-chev">{showPrev ? '\u25BE' : '\u25B8'}</span>
+      </div>
+      {showPrev && prev.map((a) => (
+        <div key={a.id} className="demo-action demo-action-prev">
+          <label className="demo-action-check">
+            <input type="checkbox" />
+            <span className="demo-action-text">{a.text}</span>
+          </label>
+          <div className="demo-action-meta">
+            <span className="demo-action-source">from {a.sourceSession}</span>
+            <span className="demo-action-author">{'\u00b7'} {a.author}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DemoMarkdown — click MD → preview + "Copied!"
+// ─────────────────────────────────────────────────────────────
+const MD_SAMPLE = `# Cycle 24 retro — Platform
+
+## What went well 🌱
+- Pairing kept us honest (Ana)
+- Tighter feedback loops (Ben)
+
+## What to fix 🩹
+- Standups ran long (Chris)
+- Kill the Friday freeze (Dana)
+
+## Actions
+- [ ] Ship daily cost breakdown to the portal — Ana
+- [x] Document the new pricing engine flow — Ben
+
+## Voting Results
+| Item | Votes |
+|------|-------|
+| Tighter feedback loops | 9 |
+| Standups ran long | 7 |
+| Pairing kept us honest | 4 |
+`;
+function DemoMarkdown() {
+  const [copied, setCopied] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const handleCopy = () => {
+    setShowPreview(true);
+    setCopied(true);
+    try {
+      navigator.clipboard?.writeText(MD_SAMPLE);
+    } catch { /* ignore clipboard permission errors */ }
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  return (
+    <div className="demo-md demo-shell">
+      <div className="demo-shell-title">Board export</div>
+      <div className="demo-md-toolbar">
+        <button className="demo-md-btn" onClick={handleCopy}>
+          {copied ? '\u2713 Copied!' : '\uD83D\uDCDD MD'}
+        </button>
+        <span className="demo-md-hint">Copy the whole board as Markdown</span>
+      </div>
+      {showPreview ? (
+        <pre className="demo-md-preview">{MD_SAMPLE}</pre>
+      ) : (
+        <div className="demo-md-empty">Click {'\uD83D\uDCDD'} MD to see what comes out</div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DemoReactionRain — confetti-gun emoji inside the demo shell
+// ─────────────────────────────────────────────────────────────
+interface DemoParticle { id: number; emoji: string; angle: number; speed: number; size: number; delay: number; duration: number; }
+let __demoParticleId = 0;
+function DemoReactionRain() {
+  const [particles, setParticles] = useState<DemoParticle[]>([]);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const emojis = ['\uD83C\uDF89', '\u2728', '\uD83D\uDE80', '\uD83C\uDF8A', '\uD83C\uDF1F', '\uD83D\uDCA5', '\uD83D\uDD25'];
+
+  const fire = (emoji: string) => {
+    const rect = shellRef.current?.getBoundingClientRect();
+    const w = rect?.width ?? 540;
+    const h = rect?.height ?? 300;
+    const diagonal = Math.sqrt(w * w + h * h);
+    const count = 24 + Math.floor(Math.random() * 10);
+    const baseSpeed = diagonal * 0.55;
+    const speedRange = diagonal * 0.4;
+    const fresh: DemoParticle[] = [];
+    for (let i = 0; i < count; i++) {
+      const angle = 0.35 + Math.random() * 1.0;
+      fresh.push({
+        id: __demoParticleId++,
+        emoji,
+        angle,
+        speed: baseSpeed + Math.random() * speedRange,
+        size: 1.0 + Math.random() * 1.0,
+        delay: Math.random() * 0.25,
+        duration: 1.8 + Math.random() * 1.2,
+      });
+    }
+    setParticles((p) => [...p, ...fresh]);
+    window.setTimeout(() => {
+      setParticles((prev) => prev.filter((x) => !fresh.find((f) => f.id === x.id)));
+    }, 3500);
+  };
+
+  return (
+    <div className="demo-rain demo-shell" ref={shellRef}>
+      <div className="demo-shell-title">Reactions</div>
+      <div className="demo-rain-buttons">
+        {emojis.map((e) => (
+          <button key={e} className="demo-rain-btn" onClick={() => fire(e)}>{e}</button>
+        ))}
+      </div>
+      <div className="demo-rain-hint">Pick an emoji — everyone in the room sees it fly.</div>
+      {particles.map((p) => {
+        const endX = Math.cos(p.angle) * p.speed;
+        const endY = -Math.sin(p.angle) * p.speed;
+        return (
+          <span
+            key={p.id}
+            className="demo-rain-particle"
+            style={{
+              fontSize: `${p.size}rem`,
+              animationDelay: `${p.delay}s`,
+              animationDuration: `${p.duration}s`,
+              ['--end-x' as never]: `${endX}px`,
+              ['--end-y' as never]: `${endY}px`,
+            } as React.CSSProperties}
+          >
+            {p.emoji}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DemoNewBoard — mock of the New Board chooser dialog
+// ─────────────────────────────────────────────────────────────
+function DemoNewBoard() {
+  const [picked, setPicked] = useState<string | null>(null);
+  const copy: Record<string, string> = {
+    linear: 'Opens the Linear picker — choose a cycle or project, Beacons drops the stats on the board.',
+    template: 'Lists your saved templates. Pick one and the board opens with its sections in place.',
+    free: 'A blank canvas. Drop sections, stickies, and groups however you like.',
+  };
+  return (
+    <div className="demo-newboard demo-shell">
+      <div className="demo-shell-title">New Board</div>
+      <div className="demo-newboard-sub">Choose how to set up your board</div>
+      <div className="demo-newboard-grid">
+        <button
+          className={`demo-newboard-card ${picked === 'linear' ? 'picked' : ''}`}
+          onClick={() => setPicked('linear')}
+        >
+          <span className="demo-newboard-icon">
+            <svg width="24" height="24" viewBox="0 0 100 100" fill="none">
+              <path d="M2.4 60.7a50 50 0 0 0 36.9 36.9L2.4 60.7z" fill="currentColor"/>
+              <path d="M.2 49.2a50 50 0 0 0 1.3 8.3L46.6 2.4A50 50 0 0 0 .2 49.2z" fill="currentColor"/>
+              <path d="M97.6 39.3a50 50 0 0 0-36.9-36.9l36.9 36.9z" fill="currentColor"/>
+              <path d="M99.8 50.8a50 50 0 0 0-1.3-8.3L53.4 97.6a50 50 0 0 0 46.4-46.8z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span className="demo-newboard-label">From Linear</span>
+          <span className="demo-newboard-desc">A retro from a cycle or project</span>
+        </button>
+        <button
+          className={`demo-newboard-card ${picked === 'template' ? 'picked' : ''}`}
+          onClick={() => setPicked('template')}
+        >
+          <span className="demo-newboard-icon">{'\uD83D\uDCCB'}</span>
+          <span className="demo-newboard-label">From Template</span>
+          <span className="demo-newboard-desc">Pre-defined sections, ready to go</span>
+        </button>
+        <button
+          className={`demo-newboard-card ${picked === 'free' ? 'picked' : ''}`}
+          onClick={() => setPicked('free')}
+        >
+          <span className="demo-newboard-icon">{'\uD83D\uDC14'}</span>
+          <span className="demo-newboard-label">Free Range</span>
+          <span className="demo-newboard-desc">A completely empty canvas</span>
+        </button>
+      </div>
+      <div className={`demo-newboard-callout ${picked ? 'visible' : ''}`}>
+        {picked ? copy[picked] : '\u00a0'}
       </div>
     </div>
   );
