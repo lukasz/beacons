@@ -102,12 +102,6 @@ function DemoLinear() {
   const completed = 18;
   const total = 24;
   const pct = Math.round((completed / total) * 100);
-  const people = [
-    { name: 'Ana',    done: 6, total: 7 },
-    { name: 'Ben',    done: 4, total: 6 },
-    { name: 'Chris',  done: 5, total: 6 },
-    { name: 'Dana',   done: 3, total: 5 },
-  ];
   return (
     <div className="demo-linear demo-shell">
       <div className="demo-shell-title">Cycle 24 · Platform</div>
@@ -139,27 +133,17 @@ function DemoLinear() {
           <span className="demo-linear-label">Completed</span>
         </div>
       </div>
-      <div className="demo-linear-people">
-        {people.map((p) => (
-          <div key={p.name} className="demo-linear-person">
-            <span className="demo-linear-person-name">{p.name}</span>
-            <div className="demo-linear-person-bar">
-              <div className="demo-linear-person-fill" style={{ width: `${(p.done / p.total) * 100}%` }} />
-            </div>
-            <span className="demo-linear-person-count">{p.done}/{p.total}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// DemoTimer — working countdown
+// DemoTimer — working countdown with GAME OVER overlay
 // ─────────────────────────────────────────────────────────────
 function DemoTimer() {
-  const [remaining, setRemaining] = useState(300);
+  const [remaining, setRemaining] = useState(10);
   const [running, setRunning] = useState(false);
+  const [showGameOver, setShowGameOver] = useState(false);
 
   useEffect(() => {
     if (!running) return;
@@ -167,6 +151,7 @@ function DemoTimer() {
       setRemaining((r) => {
         if (r <= 1) {
           setRunning(false);
+          setShowGameOver(true);
           return 0;
         }
         return r - 1;
@@ -174,6 +159,19 @@ function DemoTimer() {
     }, 1000);
     return () => window.clearInterval(id);
   }, [running]);
+
+  useEffect(() => {
+    if (!showGameOver) return;
+    const t = window.setTimeout(() => setShowGameOver(false), 3000);
+    const dismiss = () => setShowGameOver(false);
+    window.addEventListener('keydown', dismiss);
+    window.addEventListener('pointerdown', dismiss);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('keydown', dismiss);
+      window.removeEventListener('pointerdown', dismiss);
+    };
+  }, [showGameOver]);
 
   const mins = Math.floor(remaining / 60);
   const secs = remaining % 60;
@@ -197,36 +195,75 @@ function DemoTimer() {
         ) : (
           <button className="demo-btn demo-btn-start" onClick={() => setRunning(true)} disabled={remaining <= 0}>▶ Start</button>
         )}
-        <button className="demo-btn demo-btn-reset" onClick={() => { setRunning(false); setRemaining(300); }}>↺ Reset</button>
+        <button className="demo-btn demo-btn-reset" onClick={() => { setRunning(false); setRemaining(300); setShowGameOver(false); }}>↺ Reset</button>
       </div>
+      {showGameOver && (
+        <div className="game-over-overlay demo-game-over">
+          <div className="game-over-content">
+            <div className="game-over-text">GAME OVER</div>
+            <div className="game-over-sub">PRESS ANY KEY TO CONTINUE</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// DemoBoard — 4 draggable stickies arranged in 2 sections
+// DemoBoard — draggable stickies, sections, and a group
 // ─────────────────────────────────────────────────────────────
 interface DemoStickyData {
   id: string;
   text: string;
   author: string;
   colorIdx: number;
+  groupId?: string;
   x: number;
   y: number;
 }
+interface DemoGroupData { id: string; label: string; x: number; y: number; }
 const DEMO_POSTIT_COLORS = ['#FCA5A5', '#FDBA74', '#86EFAC', '#93C5FD'];
+const STICKY_W = 130;
+const STICKY_H = 78;
+
 function DemoBoard() {
   const [stickies, setStickies] = useState<DemoStickyData[]>([
-    { id: 'a', text: 'We shipped on Friday',    author: 'Ana',    colorIdx: 2, x: 20,  y: 50 },
-    { id: 'b', text: 'Pairing kept us honest',  author: 'Ben',    colorIdx: 2, x: 130, y: 80 },
-    { id: 'c', text: 'Standups ran long',       author: 'Chris',  colorIdx: 0, x: 280, y: 55 },
-    { id: 'd', text: 'Blockers went unseen',    author: 'Dana',   colorIdx: 0, x: 390, y: 90 },
+    // Grouped pair (QA team)
+    { id: 'a', text: 'QA dev starts next week', author: 'Ana',   colorIdx: 2, groupId: 'g1', x: 30,  y: 76 },
+    { id: 'b', text: 'New QA member joined',    author: 'Ben',   colorIdx: 2, groupId: 'g1', x: 150, y: 96 },
+    // Loose stickies
+    { id: 'c', text: 'Standups ran long',       author: 'Chris', colorIdx: 0, x: 320, y: 68 },
+    { id: 'd', text: 'Blockers went unseen',    author: 'Dana',  colorIdx: 0, x: 400, y: 132 },
   ]);
-  const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const boardRef = useRef<HTMLDivElement>(null);
+  const [groups, setGroups] = useState<DemoGroupData[]>([
+    { id: 'g1', label: 'QA team', x: 36, y: 46 },
+  ]);
+
+  const dragRef = useRef<null | (
+    | { kind: 'sticky'; id: string; startX: number; startY: number; origX: number; origY: number }
+    | { kind: 'group'; id: string; startX: number; startY: number; origX: number; origY: number; children: { id: string; x: number; y: number }[] }
+  )>(null);
+
+  // ── Compute the group outline (bounding box around label + grouped stickies) ──
+  const outlines = useMemo(() => {
+    return groups.map((g) => {
+      const children = stickies.filter((s) => s.groupId === g.id);
+      if (children.length === 0) return { id: g.id, x: 0, y: 0, w: 0, h: 0 };
+      const pad = 10;
+      const xs = [g.x, ...children.map((s) => s.x)];
+      const ys = [g.y, ...children.map((s) => s.y)];
+      const xMax = [g.x + 80, ...children.map((s) => s.x + STICKY_W)];
+      const yMax = [g.y + 22, ...children.map((s) => s.y + STICKY_H)];
+      const minX = Math.min(...xs) - pad;
+      const minY = Math.min(...ys) - pad;
+      const maxX = Math.max(...xMax) + pad;
+      const maxY = Math.max(...yMax) + pad;
+      return { id: g.id, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    });
+  }, [groups, stickies]);
 
   return (
-    <div className="demo-board demo-shell" ref={boardRef}>
+    <div className="demo-board demo-shell">
       <div className="demo-board-sections">
         <div className="demo-board-section section-green">
           <div className="demo-board-section-title">What went well 🌱</div>
@@ -235,6 +272,50 @@ function DemoBoard() {
           <div className="demo-board-section-title">What to fix 🩹</div>
         </div>
       </div>
+
+      {/* Group outlines behind the stickies */}
+      {outlines.map((o) => (
+        <div
+          key={`outline-${o.id}`}
+          className="demo-group-outline"
+          style={{ transform: `translate(${o.x}px, ${o.y}px)`, width: o.w, height: o.h }}
+        />
+      ))}
+
+      {/* Group labels — dragging one drags its stickies too */}
+      {groups.map((g) => (
+        <div
+          key={g.id}
+          className="demo-group-label"
+          style={{ transform: `translate(${g.x}px, ${g.y}px)` }}
+          onPointerDown={(e) => {
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            const children = stickies.filter((s) => s.groupId === g.id).map((s) => ({ id: s.id, x: s.x, y: s.y }));
+            dragRef.current = { kind: 'group', id: g.id, startX: e.clientX, startY: e.clientY, origX: g.x, origY: g.y, children };
+          }}
+          onPointerMove={(e) => {
+            const d = dragRef.current;
+            if (!d || d.kind !== 'group' || d.id !== g.id) return;
+            const dx = e.clientX - d.startX;
+            const dy = e.clientY - d.startY;
+            const nx = Math.max(4, Math.min(540 - 80, d.origX + dx));
+            const ny = Math.max(4, Math.min(320 - 30, d.origY + dy));
+            const actualDx = nx - d.origX;
+            const actualDy = ny - d.origY;
+            setGroups((prev) => prev.map((x) => (x.id === g.id ? { ...x, x: nx, y: ny } : x)));
+            setStickies((prev) => prev.map((s) => {
+              const orig = d.children.find((c) => c.id === s.id);
+              if (!orig) return s;
+              return { ...s, x: orig.x + actualDx, y: orig.y + actualDy };
+            }));
+          }}
+          onPointerUp={() => { dragRef.current = null; }}
+        >
+          {g.label}
+        </div>
+      ))}
+
+      {/* Stickies */}
       {stickies.map((s) => (
         <div
           key={s.id}
@@ -242,14 +323,15 @@ function DemoBoard() {
           style={{ transform: `translate(${s.x}px, ${s.y}px)`, background: DEMO_POSTIT_COLORS[s.colorIdx] }}
           onPointerDown={(e) => {
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-            dragRef.current = { id: s.id, startX: e.clientX, startY: e.clientY, origX: s.x, origY: s.y };
+            dragRef.current = { kind: 'sticky', id: s.id, startX: e.clientX, startY: e.clientY, origX: s.x, origY: s.y };
           }}
           onPointerMove={(e) => {
-            if (!dragRef.current || dragRef.current.id !== s.id) return;
-            const dx = e.clientX - dragRef.current.startX;
-            const dy = e.clientY - dragRef.current.startY;
-            const nx = Math.max(4, Math.min(540 - 100, dragRef.current.origX + dx));
-            const ny = Math.max(40, Math.min(300 - 80, dragRef.current.origY + dy));
+            const d = dragRef.current;
+            if (!d || d.kind !== 'sticky' || d.id !== s.id) return;
+            const dx = e.clientX - d.startX;
+            const dy = e.clientY - d.startY;
+            const nx = Math.max(4, Math.min(540 - STICKY_W, d.origX + dx));
+            const ny = Math.max(40, Math.min(320 - STICKY_H, d.origY + dy));
             setStickies((prev) => prev.map((p) => (p.id === s.id ? { ...p, x: nx, y: ny } : p)));
           }}
           onPointerUp={() => { dragRef.current = null; }}
@@ -258,28 +340,34 @@ function DemoBoard() {
           <div className="demo-sticky-author">{s.author}</div>
         </div>
       ))}
-      <div className="demo-hint">Drag them.</div>
+
+      <div className="demo-hint">Drag stickies · drag the group label to move the cluster.</div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// DemoVote — reveal rank badges
+// DemoVote — real-looking stickies + real rank badges on reveal
 // ─────────────────────────────────────────────────────────────
-interface DemoVoteCard { id: string; text: string; votes: number; }
-const RANK_MEDALS = ['', '🥇', '🥈', '🥉'];
+interface DemoVoteCard { id: string; text: string; author: string; colorIdx: number; x: number; y: number; totalVotes: number; }
+const RANK_MEDALS = ['', '\u{1F947}', '\u{1F948}', '\u{1F949}'];
+function ordinal(n: number) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
 function DemoVote() {
   const [revealed, setRevealed] = useState(false);
   const [myVotes, setMyVotes] = useState<Record<string, number>>({});
-  const cards: DemoVoteCard[] = useMemo(() => [
-    { id: 'a', text: 'Ship a broken-market manifesto', votes: 7 },
-    { id: 'b', text: 'More pairing time',              votes: 4 },
-    { id: 'c', text: 'Tighter feedback loops',         votes: 9 },
-    { id: 'd', text: 'Kill the Friday deploy freeze',  votes: 2 },
+  const cards = useMemo<DemoVoteCard[]>(() => [
+    { id: 'a', text: 'Pairing kept us honest',  author: 'Ana',   colorIdx: 2, x: 20,  y: 50,  totalVotes: 4 },
+    { id: 'b', text: 'Tighter feedback loops',  author: 'Ben',   colorIdx: 1, x: 190, y: 60,  totalVotes: 9 },
+    { id: 'c', text: 'Standups ran long',       author: 'Chris', colorIdx: 0, x: 20,  y: 170, totalVotes: 7 },
+    { id: 'd', text: 'Kill the Friday freeze',  author: 'Dana',  colorIdx: 3, x: 190, y: 180, totalVotes: 2 },
   ], []);
 
   const ranks = useMemo(() => {
-    const sorted = [...cards].sort((a, b) => b.votes - a.votes);
+    const sorted = [...cards].sort((a, b) => b.totalVotes - a.totalVotes);
     const map: Record<string, number> = {};
     sorted.forEach((c, i) => { map[c.id] = i + 1; });
     return map;
@@ -290,40 +378,45 @@ function DemoVote() {
 
   return (
     <div className="demo-vote demo-shell">
-      <div className="demo-shell-title">{revealed ? 'Results' : 'Active vote'}</div>
-      {!revealed && (
-        <div className="demo-vote-remaining">{remaining} of 3 votes remaining</div>
-      )}
-      <div className="demo-vote-grid">
+      <div className="demo-shell-title">
+        {revealed ? 'Vote results' : 'Active vote'}
+        {!revealed && <span className="demo-vote-remaining-inline"> · {remaining} vote{remaining === 1 ? '' : 's'} remaining</span>}
+      </div>
+      <div className="demo-vote-canvas">
         {cards.map((c) => {
           const mine = myVotes[c.id] || 0;
           const rank = ranks[c.id];
+          const canCast = !revealed && (remaining > 0 || mine > 0);
           return (
-            <div key={c.id} className={`demo-vote-card ${revealed ? 'revealed' : ''} ${rank === 1 ? 'winner' : ''}`}>
+            <div
+              key={c.id}
+              className={`demo-sticky demo-vote-sticky ${canCast ? 'votable' : ''}`}
+              style={{ transform: `translate(${c.x}px, ${c.y}px)`, background: DEMO_POSTIT_COLORS[c.colorIdx] }}
+              onClick={() => {
+                if (revealed) return;
+                if (remaining > 0) setMyVotes((v) => ({ ...v, [c.id]: (v[c.id] || 0) + 1 }));
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (revealed || !mine) return;
+                setMyVotes((v) => { const n = { ...v }; if (n[c.id] > 1) n[c.id] -= 1; else delete n[c.id]; return n; });
+              }}
+            >
+              {revealed && rank > 0 && (
+                <div className={`rank-badge rank-${Math.min(rank, 4)}`}>
+                  {RANK_MEDALS[rank] && <span className="rank-medal">{RANK_MEDALS[rank]}</span>}
+                  <span className="rank-text">{ordinal(rank)}</span>
+                </div>
+              )}
+
               {revealed ? (
-                <>
-                  <div className={`demo-rank-badge rank-${Math.min(rank, 4)}`}>
-                    <span>{RANK_MEDALS[rank] || ''}</span>
-                    <span>#{rank}</span>
-                  </div>
-                  <div className="demo-vote-count">{c.votes}</div>
-                </>
+                <div className="vote-badge" data-count={c.totalVotes} />
               ) : (
-                mine > 0 && <div className="demo-vote-mine" data-count={mine}>★{mine}</div>
+                mine > 0 && <div className="vote-badge can-unvote" data-count={mine} />
               )}
-              <div className="demo-vote-text">{c.text}</div>
-              {!revealed && (
-                <button
-                  className="demo-vote-btn"
-                  onClick={() => {
-                    if (remaining === 0 && !myVotes[c.id]) return;
-                    setMyVotes((v) => ({ ...v, [c.id]: (v[c.id] || 0) + 1 }));
-                  }}
-                  disabled={remaining === 0}
-                >
-                  Vote
-                </button>
-              )}
+
+              <div className="demo-sticky-text">{c.text}</div>
+              <div className="demo-sticky-author">{c.author}</div>
             </div>
           );
         })}
@@ -332,7 +425,10 @@ function DemoVote() {
         {revealed ? (
           <button className="demo-btn" onClick={() => { setRevealed(false); setMyVotes({}); }}>Run it again</button>
         ) : (
-          <button className="demo-btn demo-btn-start" onClick={() => setRevealed(true)}>Close & reveal</button>
+          <>
+            <span className="demo-vote-hint">Click a sticky to vote · right-click to unvote</span>
+            <button className="demo-btn demo-btn-start" onClick={() => setRevealed(true)}>Close &amp; reveal</button>
+          </>
         )}
       </div>
     </div>
