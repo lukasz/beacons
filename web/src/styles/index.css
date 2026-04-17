@@ -6959,7 +6959,11 @@ input[type="number"] {
    TADA — public marketing landing at /tada
    ============================================ */
 .tada {
-  min-height: 100vh;
+  /* #root is locked to 100vh for the board canvas — make this page its
+     own scroll container so the long marketing content can scroll. */
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg);
