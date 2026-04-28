@@ -3,18 +3,11 @@ import { useBoard } from '../hooks/useBoard';
 import type { PostIt as PostItType } from '../types';
 import { POSTIT_COLORS } from '../types';
 import { zoomRef } from '../zoomRef';
+import { RANK_MEDALS, ordinal } from '../lib/ranks';
 
 // Screen-space pointer motion, in px, required before we treat a
 // pointerdown as the start of a drag. Anything smaller is a click.
 const DRAG_THRESHOLD = 4;
-
-const RANK_MEDALS = ['', '\u{1F947}', '\u{1F948}', '\u{1F949}'];
-
-function ordinal(n: number) {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
 
 interface Props {
   postIt: PostItType;

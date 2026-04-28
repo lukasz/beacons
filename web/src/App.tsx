@@ -8,10 +8,11 @@ import Dashboard from './components/Dashboard';
 import Board from './components/Board';
 import RiceCalculator from './components/RiceCalculator';
 import TadaLanding from './components/TadaLanding';
+import { storage } from './lib/storage';
 
-// Initialize theme from localStorage before first render
+// Initialize theme from storage before first render
 (() => {
-  const stored = localStorage.getItem('beacons-theme');
+  const stored = storage.read('theme');
   document.documentElement.setAttribute('data-theme', stored === 'light' ? 'light' : 'dark');
 })();
 
@@ -60,10 +61,9 @@ export default function App() {
   const { user, loading, signIn, signOut } = useAuth();
 
   // Guest state for public boards
-  const [guestUser, setGuestUser] = useState<{ id: string; name: string } | null>(() => {
-    const stored = sessionStorage.getItem('beacons-guest');
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [guestUser, setGuestUser] = useState<{ id: string; name: string } | null>(() =>
+    storage.readJson<{ id: string; name: string }>('guestUser'),
+  );
   const [boardAccessMode, setBoardAccessMode] = useState<string | null>(null);
 
   // Pick up Linear OAuth token from URL fragment
@@ -72,7 +72,7 @@ export default function App() {
     if (hash.includes('linear_token=')) {
       const token = new URLSearchParams(hash.slice(1)).get('linear_token');
       if (token) {
-        localStorage.setItem('beacons-linear-key', token);
+        storage.write('linearApiKey', token);
       }
       // Clean up the hash
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -132,7 +132,7 @@ export default function App() {
       id: `guest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name,
     };
-    sessionStorage.setItem('beacons-guest', JSON.stringify(guest));
+    storage.writeJson('guestUser', guest);
     setGuestUser(guest);
   }, []);
 
@@ -226,7 +226,7 @@ export default function App() {
   const handleLeave = useCallback(() => {
     if (isGuest) {
       // Guests can't go to dashboard — clear guest state and show join screen
-      sessionStorage.removeItem('beacons-guest');
+      storage.clear('guestUser');
       setGuestUser(null);
       return;
     }

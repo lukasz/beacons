@@ -10,8 +10,8 @@ import {
   fetchCycles, fetchProjects, fetchCycleIssues, fetchProjectIssues,
   type LinearTeam, type LinearMember, type LinearCycle, type LinearProject,
 } from '../linearClient';
-
-const LINEAR_KEY_STORAGE = 'beacons-linear-key';
+import { storage } from '../lib/storage';
+import { timeAgo } from '../lib/time';
 
 // ---- Types ----
 
@@ -79,18 +79,6 @@ interface Props {
   onNavigateRice?: () => void;
 }
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
-}
-
 type Tab = 'boards' | 'actions' | 'teams';
 
 export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoom, onCreateFromTemplate, onCreateTemplate, onEditTemplate, onUseTemplate, onJoinRoom, onTabChange, onSignOut, onNavigateRice }: Props) {
@@ -156,7 +144,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
   // Team tab state
   const [teamTabSelectedId, setTeamTabSelectedId] = useState<string | null>(() =>
-    localStorage.getItem('beacons-team-tab-selected') || null
+    storage.read('teamTabSelected') || null
   );
   const [teamTabCycles, setTeamTabCycles] = useState<LinearCycle[]>([]);
   const [teamTabProjects, setTeamTabProjects] = useState<LinearProject[]>([]);
@@ -345,7 +333,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
   useEffect(() => {
     if (tab !== 'teams' || !teamTabSelectedId) return;
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     const team = teams.find((t) => t.id === teamTabSelectedId);
     if (!team?.linearTeamId || !apiKey) {
       setTeamTabCycles([]);
@@ -358,13 +346,13 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
     Promise.all([
       fetchCycles(apiKey, linearTeamId).catch((e) => {
-        if (String(e).includes('401')) localStorage.removeItem(LINEAR_KEY_STORAGE);
+        if (String(e).includes('401')) storage.clear('linearApiKey');
         return [] as LinearCycle[];
       }),
       fetchProjects(apiKey).then((all) =>
         all.filter((p) => p.teams.nodes.some((t) => t.id === linearTeamId))
       ).catch((e) => {
-        if (String(e).includes('401')) localStorage.removeItem(LINEAR_KEY_STORAGE);
+        if (String(e).includes('401')) storage.clear('linearApiKey');
         return [] as LinearProject[];
       }),
     ]).then(([cyc, proj]) => {
@@ -412,7 +400,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   }, []);
 
   const handleDashLinearOpen = useCallback(async (action: GlobalAction) => {
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey) {
       setDLinearError('Connect Linear first from the dashboard (use "From Linear" when creating a board)');
       setDLinearActionId(action.id);
@@ -435,7 +423,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   }, []);
 
   const handleDashTeamSelect = useCallback(async (teamId: string) => {
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey) return;
     setDSelectedTeamId(teamId);
     setDLinearLoading(true);
@@ -451,7 +439,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   }, []);
 
   const handleDashCreateTicket = useCallback(async () => {
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey || !dSelectedTeamId || !dLinearActionId || !dLinearBoardId) return;
     const action = globalActions.find((a) => a.id === dLinearActionId && a.boardId === dLinearBoardId);
     if (!action) return;
@@ -683,7 +671,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
     const team = teams.find((t) => t.id === teamTabSelectedId);
     if (!team?.linearTeamId) return;
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey) return;
 
     const tpl = templateId ? templateBoards.find((t) => t.id === templateId) : null;
@@ -1353,7 +1341,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
                 <TeamTabSelector
                   teams={teams}
                   selectedId={teamTabSelectedId}
-                  onSelect={(id) => { setTeamTabSelectedId(id); setTeamTabProjectStatuses([]); setTeamTabProjectSearch(''); setTeamBoardSearch(''); setTeamBoardShowArchived(false); setTeamActionSessionFilter('all'); setTeamActionLinearFilter('all'); setTeamActionDoneFilter('all'); if (id) localStorage.setItem('beacons-team-tab-selected', id); else localStorage.removeItem('beacons-team-tab-selected'); }}
+                  onSelect={(id) => { setTeamTabSelectedId(id); setTeamTabProjectStatuses([]); setTeamTabProjectSearch(''); setTeamBoardSearch(''); setTeamBoardShowArchived(false); setTeamActionSessionFilter('all'); setTeamActionLinearFilter('all'); setTeamActionDoneFilter('all'); if (id) storage.write('teamTabSelected', id); else storage.clear('teamTabSelected'); }}
                 />
                 <button className="btn btn-primary" onClick={() => setTeamModalOpen(true)}>
                   + New Team
@@ -1380,7 +1368,7 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
                 {/* Two-column: Cycles + Projects */}
                 <div className="team-tab-two-col">
                   {/* Connect to Linear prompt when team is mapped but no API key */}
-                  {selectedTeam.linearTeamId && !localStorage.getItem(LINEAR_KEY_STORAGE) && (
+                  {selectedTeam.linearTeamId && !storage.read('linearApiKey') && (
                     <div className="team-tab-connect-linear">
                       <svg width="24" height="24" viewBox="0 0 100 100" fill="none" style={{ opacity: 0.6 }}>
                         <path d="M2.4 60.7a50 50 0 0 0 36.9 36.9L2.4 60.7z" fill="currentColor"/>
@@ -2224,8 +2212,6 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
 // ---- Team Manager Component ----
 
-const LINEAR_KEY_STORAGE_TM = 'beacons-linear-key';
-
 function TeamManager({ teams, userId, onCreate, onUpdate, onDelete, onClose }: {
   teams: Team[];
   userId: string;
@@ -2244,7 +2230,7 @@ function TeamManager({ teams, userId, onCreate, onUpdate, onDelete, onClose }: {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const loadLinearTeams = useCallback(async () => {
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE_TM);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey) return;
     setLinearLoading(true);
     try {
@@ -2501,12 +2487,6 @@ function TeamTabCreateModal({ name, dateRange, hasScope, startPts, totalPts, don
       </div>
     </div>
   );
-}
-
-function hashStr(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  return h;
 }
 
 // ---- Team Multi-Select Dropdown ----
