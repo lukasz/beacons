@@ -6,6 +6,7 @@ import {
   type LinearTeam, type LinearCycle, type LinearIssue, type LinearProject,
 } from '../linearClient';
 import { COLORS } from '../types';
+import { storage } from '../lib/storage';
 
 interface TemplateOption {
   id: string;
@@ -58,8 +59,6 @@ export interface RetroTemplate {
 
 type Mode = 'cycle' | 'project';
 type Step = 'connect' | 'choose' | 'team' | 'cycle' | 'project' | 'preview';
-
-const LINEAR_KEY_STORAGE = 'beacons-linear-key';
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -155,10 +154,10 @@ const DEFAULT_SECTIONS = [
 
 export default function LinearSync({ onClose, onCreateBoard, templates, defaultTemplateId, linkedSourceIds }: Props) {
   const [step, setStep] = useState<Step>(() =>
-    localStorage.getItem(LINEAR_KEY_STORAGE) ? 'choose' : 'connect'
+    storage.has('linearApiKey') ? 'choose' : 'connect'
   );
   const [mode, setMode] = useState<Mode>('cycle');
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(LINEAR_KEY_STORAGE) || '');
+  const [apiKey, setApiKey] = useState(() => storage.read('linearApiKey') || '');
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState('');
   const [oauthEnabled, setOauthEnabled] = useState<boolean | null>(null);
@@ -192,7 +191,7 @@ export default function LinearSync({ onClose, onCreateBoard, templates, defaultT
     ? (templates || []).find((t) => t.id === selectedTemplateId)?.sections || DEFAULT_SECTIONS
     : DEFAULT_SECTIONS;
 
-  const key = localStorage.getItem(LINEAR_KEY_STORAGE) || apiKey;
+  const key = storage.read('linearApiKey') || apiKey;
 
   // Fetch workspace slug once we have a key
   useEffect(() => {
@@ -207,7 +206,7 @@ export default function LinearSync({ onClose, onCreateBoard, templates, defaultT
     fetchTeams(key).then(setTeams).catch((e) => {
       const msg = e.message || '';
       if (msg.includes('401') || msg.includes('AUTHENTICATION') || msg.includes('not authenticated')) {
-        localStorage.removeItem(LINEAR_KEY_STORAGE);
+        storage.clear('linearApiKey');
         setStep('connect');
         setError('Linear session expired. Please reconnect.');
       } else {
@@ -236,7 +235,7 @@ export default function LinearSync({ onClose, onCreateBoard, templates, defaultT
     const valid = await validateApiKey(apiKey.trim());
     setValidating(false);
     if (valid) {
-      localStorage.setItem(LINEAR_KEY_STORAGE, apiKey.trim());
+      storage.write('linearApiKey', apiKey.trim());
       setStep('choose');
     } else {
       setError('Invalid API key. Check it in Linear Settings > Security & Access.');
@@ -244,7 +243,7 @@ export default function LinearSync({ onClose, onCreateBoard, templates, defaultT
   }, [apiKey]);
 
   const handleDisconnect = useCallback(() => {
-    localStorage.removeItem(LINEAR_KEY_STORAGE);
+    storage.clear('linearApiKey');
     setApiKey('');
     setTeams([]);
     setCycles([]);

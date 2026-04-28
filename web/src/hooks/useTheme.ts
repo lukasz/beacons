@@ -1,14 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { storage } from '../lib/storage';
 
 type Theme = 'dark' | 'light';
 
-const STORAGE_KEY = 'beacons-theme';
-
 function getInitialTheme(): Theme {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark') return stored;
-  } catch {}
+  const stored = storage.read('theme');
+  if (stored === 'light' || stored === 'dark') return stored;
   return 'dark'; // Default: Geek Mode
 }
 
@@ -17,9 +14,7 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    try {
-      localStorage.setItem(STORAGE_KEY, theme);
-    } catch {}
+    storage.write('theme', theme);
   }, [theme]);
 
   const toggleTheme = useCallback(() => {

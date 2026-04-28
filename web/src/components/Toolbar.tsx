@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useBoard } from '../hooks/useBoard';
 import { COLORS } from '../types';
 import { useTheme } from '../hooks/useTheme';
+import { storage } from '../lib/storage';
+import { hashCode } from '../lib/hash';
 
 export default function Toolbar() {
   const { state, send, dispatch, onLeave, templateMode, isGuest } = useBoard();
@@ -69,11 +71,11 @@ export default function Toolbar() {
   }, [editingTeam]);
 
   // --- Cursors toggle ---
-  const [cursorsOn, setCursorsOn] = useState(() => localStorage.getItem('beacons-cursors') !== 'off');
+  const [cursorsOn, setCursorsOn] = useState(() => storage.read('cursors') !== 'off');
   const toggleCursors = useCallback(() => {
     const next = !cursorsOn;
     setCursorsOn(next);
-    localStorage.setItem('beacons-cursors', next ? 'on' : 'off');
+    storage.write('cursors', next ? 'on' : 'off');
     window.dispatchEvent(new CustomEvent('cursors-toggle', { detail: next }));
   }, [cursorsOn]);
 
@@ -193,7 +195,7 @@ export default function Toolbar() {
             <span
               className="session-team-name session-team-link"
               onClick={() => {
-                localStorage.setItem('beacons-team-tab-selected', state.teamId!);
+                storage.write('teamTabSelected', state.teamId!);
                 window.location.href = '/?tab=teams';
               }}
               title={`Go to ${state.teamName} team page`}
@@ -269,12 +271,4 @@ export default function Toolbar() {
       )}
     </div>
   );
-}
-
-function hashCode(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  }
-  return h;
 }

@@ -5,8 +5,7 @@ import {
   type LinearTeam, type LinearMember,
 } from '../linearClient';
 import { supabase } from '../supabaseClient';
-
-const LINEAR_KEY_STORAGE = 'beacons-linear-key';
+import { storage } from '../lib/storage';
 
 export interface PreviousAction {
   id: string;
@@ -179,7 +178,7 @@ export default function ActionsPanel() {
 
   // Linear: open ticket creation modal
   const handleLinearOpen = useCallback(async (actionId: string) => {
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey) {
       setLinearError('Connect Linear first from the dashboard (From Linear button)');
       setLinearActionId(actionId);
@@ -210,7 +209,7 @@ export default function ActionsPanel() {
   }, [statsTeamName]);
 
   const handleTeamSelect = useCallback(async (teamId: string) => {
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey) return;
     setSelectedTeamId(teamId);
     setLinearLoading(true);
@@ -226,7 +225,7 @@ export default function ActionsPanel() {
   }, []);
 
   const handleCreateTicket = useCallback(async () => {
-    const apiKey = localStorage.getItem(LINEAR_KEY_STORAGE);
+    const apiKey = storage.read('linearApiKey');
     if (!apiKey || !selectedTeamId || !linearActionId) return;
     const action = state.actions?.[linearActionId];
     if (!action) return;
@@ -260,7 +259,7 @@ export default function ActionsPanel() {
     setCreatedTicket(null);
   }, []);
 
-  const hasLinearKey = !!localStorage.getItem(LINEAR_KEY_STORAGE);
+  const hasLinearKey = !!storage.read('linearApiKey');
 
   return (
     <>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { RANK_MEDALS, ordinal } from '../lib/ranks';
 
 type DemoKind = 'board' | 'timer' | 'vote' | 'hide' | 'ocd' | 'linear' | 'actions' | 'markdown' | 'rain' | 'newboard';
 
@@ -378,12 +379,6 @@ function DemoBoard() {
 // DemoVote — real-looking stickies + real rank badges on reveal
 // ─────────────────────────────────────────────────────────────
 interface DemoVoteCard { id: string; text: string; author: string; colorIdx: number; x: number; y: number; totalVotes: number; }
-const RANK_MEDALS = ['', '\u{1F947}', '\u{1F948}', '\u{1F949}'];
-function ordinal(n: number) {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
 function DemoVote() {
   const [revealed, setRevealed] = useState(false);
   const [myVotes, setMyVotes] = useState<Record<string, number>>({});

@@ -22,108 +22,11 @@ import CycleStatsPanel from './CycleStatsPanel';
 import ActionsPanel from './ActionsPanel';
 import { fetchPreviousActions, type PreviousAction } from './ActionsPanel';
 import { zoomRef } from '../zoomRef';
-import type { BoardState } from '../types';
-
-function buildMarkdown(
-  state: BoardState,
-  selectedIds?: Set<string>,
-  previousActions?: PreviousAction[],
-): string {
-  const lines: string[] = [];
-  const allPostIts = Object.values(state.postIts);
-  const allActions = Object.values(state.actions || {});
-  const sortedSections = Object.values(state.sections).sort((a, b) => a.order - b.order);
-
-  // Header
-  if (state.sessionName) lines.push(`# ${state.sessionName}`);
-  if (state.beatGoal) lines.push(`### ${state.beatGoal}`);
-
-  // Sections
-  for (const section of sortedSections) {
-    const sectionPostIts = allPostIts.filter((p) => p.sectionId === section.id && p.text);
-    const relevant = selectedIds
-      ? sectionPostIts.filter((p) => selectedIds.has(p.id))
-      : sectionPostIts;
-    if (relevant.length === 0) continue;
-
-    lines.push('', `## ${section.title}`);
-
-    // Partition into grouped and ungrouped
-    const byGroup = new Map<string, typeof relevant>();
-    const ungrouped: typeof relevant = [];
-    for (const p of relevant) {
-      if (p.groupId && state.groups[p.groupId]) {
-        if (!byGroup.has(p.groupId)) byGroup.set(p.groupId, []);
-        byGroup.get(p.groupId)!.push(p);
-      } else {
-        ungrouped.push(p);
-      }
-    }
-
-    // Groups
-    for (const [groupId, items] of byGroup) {
-      const group = state.groups[groupId];
-      if (group?.label) lines.push(`### ${group.label}`);
-      for (const p of items) lines.push(`- ${p.text}`);
-    }
-
-    // Ungrouped under "Standalone"
-    if (ungrouped.length > 0) {
-      lines.push('### Standalone');
-      for (const p of ungrouped) lines.push(`- ${p.text}`);
-    }
-  }
-
-  // Actions
-  const openActions = allActions.filter((a) => !a.done);
-  const hasPrevActions = previousActions && previousActions.length > 0;
-  if (openActions.length > 0 || hasPrevActions) {
-    lines.push('', '## Actions');
-    if (openActions.length > 0) {
-      lines.push("### This session's actions");
-      for (const a of openActions) lines.push(`- [ ] ${a.text}`);
-    }
-    if (hasPrevActions) {
-      lines.push("### Previous sessions' actions");
-      for (const a of previousActions!) {
-        lines.push(`- [ ] ${a.text} _(${a.sourceSessionName})_`);
-      }
-    }
-  }
-
-  // Voting results (last vote session)
-  const lastVote = state.voteHistory?.[state.voteHistory.length - 1];
-  if (lastVote?.closed) {
-    const voteCounts: Record<string, number> = {};
-    for (const userVotes of Object.values(lastVote.votes)) {
-      for (const postItId of userVotes) {
-        voteCounts[postItId] = (voteCounts[postItId] || 0) + 1;
-      }
-    }
-    const ranked = Object.entries(voteCounts)
-      .map(([id, count]) => ({ text: state.postIts[id]?.text || id, count }))
-      .filter((r) => r.text)
-      .sort((a, b) => b.count - a.count);
-
-    if (ranked.length > 0) {
-      lines.push('', '## Voting Results');
-      lines.push('| Item | Votes |', '|------|-------|');
-      for (const r of ranked) lines.push(`| ${r.text.replace(/\|/g, '\\|')} | ${r.count} |`);
-    }
-  }
-
-  return lines.join('\n').trim() + '\n';
-}
+import { storage } from '../lib/storage';
+import { hashCode } from '../lib/hash';
+import { buildMarkdown } from '../lib/buildMarkdown';
 
 interface RemoteCursor { userId: string; name: string; x: number; y: number; ts: number }
-
-function hashCode(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  }
-  return h;
-}
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
@@ -393,7 +296,7 @@ export default function Board() {
   const spaceDown = useRef(false);
 
   // ── Remote Cursors ──
-  const [cursorsEnabled, setCursorsEnabled] = useState(() => localStorage.getItem('beacons-cursors') !== 'off');
+  const [cursorsEnabled, setCursorsEnabled] = useState(() => storage.read('cursors') !== 'off');
   const remoteCursorsRef = useRef<Map<string, RemoteCursor>>(new Map());
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const cursorThrottleRef = useRef(0);
