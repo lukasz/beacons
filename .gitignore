@@ -3,6 +3,8 @@ node_modules/
 
 # Build output
 web/dist/
+web/coverage/
+web/tsconfig.tsbuildinfo
 server/temtro
 server/temtro-server
 server/server
