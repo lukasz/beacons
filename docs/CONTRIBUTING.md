@@ -108,6 +108,18 @@ These are not suggestions:
 - **No `any`.** If TypeScript can't infer it, you can spell it.
 - **No `as unknown as Foo` casts** to bypass type errors. Fix the types.
 
+### When you change something, prove it still works
+
+Before committing, the answer to "what would break if this regressed?"
+must be "the test that lives next to it." If you migrated a callsite,
+either add a behavioural test that exercises it, or rely on a tested
+abstraction **and** a smoke test that proves the migrated file still
+renders. A bug fix is committed with its regression test.
+
+The whole `npm test` suite must pass and the total count must strictly
+increase whenever you remove a duplication or change behaviour. If you
+can't, file a follow-up entry in `docs/CHANGELOG.md` saying so.
+
 See `docs/TESTING.md` for tooling and concrete patterns.
 
 ## Commits & PRs

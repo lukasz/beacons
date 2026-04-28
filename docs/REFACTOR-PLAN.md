@@ -328,6 +328,46 @@ No CSS rules change; only physical layout.
 - Don't combine phases. The point is bisectability if something regresses.
 - If a phase is large, split it into sub-PRs (e.g. Phase 5 could be one PR per tab) but keep the dependency order.
 
+## Per-phase test-coverage rule
+
+Every phase must ship tests for **what it changed**, not just for the new
+modules it added. The phase isn't done until the answer to "what would
+break if this regressed?" is "the test that lives next to it."
+
+For each phase, the PR description must list:
+
+1. **New code** — every new module/file gets unit tests at the
+   coverage target for its layer (lib 80%, services 70%, hooks 60%,
+   components 30% smoke).
+2. **Migrated callsites** — every callsite touched by the phase needs at
+   least one assertion proving the behaviour is preserved. Either:
+   - a direct behavioural test (a component test that exercises the
+     callsite — preferred where reasonable), or
+   - a test on the abstraction the callsite was migrated to, **plus** a
+     smoke test that proves the migrated file still renders and wires
+     through to the abstraction.
+3. **Bug fixes discovered along the way** — pinned by a regression test
+   in the same PR.
+
+Acceptance gate per phase:
+
+- `npm test` green.
+- `npm run build` clean.
+- Total test count strictly increased over the previous phase.
+- Coverage report does not drop on any layer (compare against the prior
+  phase's report).
+- The PR description lists every callsite migrated and the test that
+  defends it (one line per file, "X migrated, defended by Y").
+
+If the right test is *prohibitively expensive* in this phase (e.g.
+covering App's guest-flow before App splits), that's allowed but you
+must:
+
+- File a follow-up under `docs/CHANGELOG.md` referencing the missing
+  coverage and the phase that will land it.
+- The relevant abstraction (e.g. `storage.writeJson`) must still be
+  unit-tested.
+
 ---
 
 ## What we're not doing (and why)
