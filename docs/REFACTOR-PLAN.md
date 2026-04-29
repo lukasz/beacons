@@ -154,25 +154,38 @@ events.
 target requires splitting the pointer-handler tree and the render tree —
 both are large enough to warrant their own PR.
 
-## Phase 3.5 — Pointer handlers + render-tree split
+## Phase 3.5 — Pointer hooks + render canvas split
 
-Pointer logic in `Board.tsx` (handleBoardPointerDown / Move / Up plus the
-image-resize and selection-drag refs) is ~400 lines that all read shared
-board state. The render tree is ~600 lines of JSX.
+Three new pointer hooks plus a presentation component to split the
+render tree from Board.tsx.
 
-**Plan:**
-- `useMarqueeSelection.ts` — marqueeRef + on-up hit-testing.
-- `useSelectionDrag.ts` — selDragRef + drag-broadcast-with-threshold.
-- `useImageResize.ts` — imgResizeRef + per-corner geometry.
-- `<BoardCanvas>` sub-component for the render tree (post-its, sections,
-  groups, images, cursors, marquee rect, selection outlines, ghost).
+**Created in Phase 3.5:**
+- `useImageResize` — imgResize ref + per-corner geometry, broadcasts
+  `move_image` while dragging.
+- `useSelectionDrag` — selDrag ref + drag-broadcast-with-threshold;
+  exports a `snapshotSelection` helper for the dispatch site.
+- `useMarqueeSelection` — marqueeRef + live `marquee` shape +
+  `commit()` that hit-tests the canvas into a `SelectedItem[]`.
+- `useRadialMenuItems` — the 190-line context-menu builder.
+- `lib/organizeBoard.ts` — pure geometry for the OCD button.
+- `<BoardCanvas>` — pure-render sub-component for the transformed
+  canvas (groups, sections, post-its, images, cursors, ghost,
+  selection outlines).
 
-**Acceptance:**
-- `Board.tsx` < 400 lines (composition + top-level handlers only).
-- `BoardCanvas.tsx` is a pure render component receiving props.
-- All five new hooks have unit tests.
-- No regressions in vote/drag/marquee behaviour (covered by existing
-  component smoke tests + new hook tests).
+**Result:** `Board.tsx` 1465 → 756 lines (-48%). All extracted hooks
+unit-tested.
+
+## Phase 3.6 — final Board.tsx slim-down
+
+To hit the original < 400-line target, the remaining work is:
+- Extract `handleBoardPointerDown` (~100 lines of dispatch logic) into
+  a `useBoardPointerDispatch` hook.
+- Pull the JSX footer (FloatingMenu / Timer / GiphyPicker / RadialMenu
+  / creation-mode banners / bottom-controls) into a `<BoardChrome>`
+  sub-component.
+- Move the remaining `vote-view-change` / `vote-ranks-visibility` /
+  `cursors-toggle` event-bus state into BoardUiContext as part of
+  Phase 4 (which kills the global event bus anyway).
 
 ---
 
