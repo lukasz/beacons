@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { handlerRegistry } from '../state/handlerRegistry';
 
 interface Particle {
   id: number;
@@ -47,10 +48,8 @@ export default function ReactionRain() {
   }, []);
 
   useEffect(() => {
-    (window as unknown as Record<string, unknown>).__triggerReactionRain = triggerRain;
-    return () => {
-      delete (window as unknown as Record<string, unknown>).__triggerReactionRain;
-    };
+    handlerRegistry.setReactionHandler(triggerRain);
+    return () => { handlerRegistry.setReactionHandler(null); };
   }, [triggerRain]);
 
   if (particles.length === 0) return null;

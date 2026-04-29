@@ -6,6 +6,7 @@ import { render, type RenderOptions, type RenderResult } from '@testing-library/
 import type { ReactElement } from 'react';
 import { vi } from 'vitest';
 import { BoardContext, type BoardContextValue } from '../hooks/useBoard';
+import { BoardUiProvider } from '../state/BoardUiContext';
 import type { BoardState } from '../types';
 import { fixtureBoardState } from './fixtures';
 
@@ -49,7 +50,9 @@ export function renderWithBoard(
     isGuest: context?.isGuest,
   };
   const result = render(
-    <BoardContext.Provider value={value}>{ui}</BoardContext.Provider>,
+    <BoardContext.Provider value={value}>
+      <BoardUiProvider>{ui}</BoardUiProvider>
+    </BoardContext.Provider>,
     renderOptions,
   );
   return { ...result, send, dispatch, contextValue: value };

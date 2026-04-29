@@ -25,12 +25,28 @@ import HiddenBanner from './HiddenBanner';
 import CycleStatsPanel from './CycleStatsPanel';
 import ActionsPanel from './ActionsPanel';
 import { actions as actionsService, type PreviousAction } from '../services/actions';
-import { storage } from '../lib/storage';
 import { buildMarkdown } from '../lib/buildMarkdown';
 import { organizeBoard } from '../lib/organizeBoard';
+import { BoardUiProvider, useBoardUi } from '../state/BoardUiContext';
 
 export default function Board() {
+  return (
+    <BoardUiProvider>
+      <BoardInner />
+    </BoardUiProvider>
+  );
+}
+
+function BoardInner() {
   const { state, send, userId, templateMode } = useBoard();
+  const {
+    viewingHistoryId,
+    ranksVisible,
+    votePanelOpen,
+    setVotePanelOpen,
+    toggleVotePanel,
+    cursorsEnabled,
+  } = useBoardUi();
 
   const postIts = useMemo(() => Object.values(state.postIts), [state.postIts]);
   const sections = useMemo(
@@ -39,8 +55,6 @@ export default function Board() {
   );
   const groups = useMemo(() => Object.values(state.groups), [state.groups]);
 
-  const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
-  const [ranksVisible, setRanksVisible] = useState(true);
   const voteUI = useVoteUI(state, userId, viewingHistoryId, ranksVisible);
   const { vote, votingActive, canVote, hasRemainingVotes, rankMap, getVoteTarget,
     getVoteCount, getEffectiveVoteCount, getEffectiveRank } = voteUI;
@@ -80,20 +94,6 @@ export default function Board() {
   // ── Copy / Paste ──
   const { copyItems, pasteItems, hasItems: clipboardHasItems } = useClipboard(state, send, userId);
 
-  // Vote-history sidebar selection. Stays here in Phase 3; will move to
-  // BoardUiContext in Phase 4 along with the rest of the event-bus state.
-  useEffect(() => {
-    const handler = (e: Event) => setViewingHistoryId((e as CustomEvent).detail);
-    window.addEventListener('vote-view-change', handler);
-    return () => window.removeEventListener('vote-view-change', handler);
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: Event) => setRanksVisible((e as CustomEvent).detail);
-    window.addEventListener('vote-ranks-visibility', handler);
-    return () => window.removeEventListener('vote-ranks-visibility', handler);
-  }, []);
-
   const getSectionColorIdx = useCallback(
     (sectionId: string) => {
       return state.sections[sectionId]?.colorIdx || 0;
@@ -109,7 +109,6 @@ export default function Board() {
   } = usePanZoom();
 
   // ── Remote Cursors ──
-  const [cursorsEnabled, setCursorsEnabled] = useState(() => storage.read('cursors') !== 'off');
   const { cursors: remoteCursors, trackLocal: trackLocalCursor } = useRemoteCursors(send);
 
   // ── Creation Mode ──
@@ -123,7 +122,6 @@ export default function Board() {
   const closeTimer = useCallback(() => {
     send('timer_open', { open: false });
   }, [send]);
-  const [votePanelOpen, setVotePanelOpen] = useState(false);
   const [giphyOpen, setGiphyOpen] = useState(false);
   const [exportCopied, setExportCopied] = useState(false);
   const prevActionsCache = useRef<PreviousAction[] | null>(null);
@@ -144,18 +142,7 @@ export default function Board() {
     setTimeout(() => setExportCopied(false), 1500);
   }, [state, getPreviousActions]);
 
-  useEffect(() => {
-    const handler = (e: Event) => setVotePanelOpen((e as CustomEvent).detail);
-    window.addEventListener('vote-panel-visibility', handler);
-    return () => window.removeEventListener('vote-panel-visibility', handler);
-  }, []);
-
-  // ── Cursors toggle listener ──
-  useEffect(() => {
-    const handler = (e: Event) => setCursorsEnabled((e as CustomEvent).detail);
-    window.addEventListener('cursors-toggle', handler);
-    return () => window.removeEventListener('cursors-toggle', handler);
-  }, []);
+  // votePanelOpen + cursorsEnabled now live in BoardUiContext; nothing to subscribe to.
 
   // Ghost preview position for creation mode
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
@@ -321,6 +308,7 @@ export default function Board() {
     send, copyItems, pasteItems,
     clearSelection: () => setSelection([]),
     onExportMarkdown: handleExportMarkdown,
+    toggleVotePanel,
   });
 
   // ── Pan / Marquee / Selection-drag handlers ──
@@ -619,6 +607,7 @@ export default function Board() {
           timerOpen={timerOpen}
           onToggleTimer={toggleTimerOpen}
           hasVoteActivity={votePanelOpen}
+          onToggleVotePanel={toggleVotePanel}
           stickyColorIdx={ctxPostItColor}
           onStickyColorChange={setCtxPostItColor}
           sectionColorIdx={ctxSectionColor}

@@ -10,6 +10,7 @@ import RiceCalculator from './components/RiceCalculator';
 import TadaLanding from './components/TadaLanding';
 import { storage } from './lib/storage';
 import { boards } from './services/boards';
+import { handlerRegistry, type CursorMoveData } from './state/handlerRegistry';
 
 // Initialize theme from storage before first render
 (() => {
@@ -93,17 +94,11 @@ export default function App() {
   const baseHandleMessage = useBoardMessageHandler(dispatch);
   const handleMessage = useCallback((type: string, payload: unknown) => {
     if (type === 'reaction') {
-      const fn = (window as unknown as Record<string, unknown>).__triggerReactionRain;
-      if (typeof fn === 'function') {
-        (fn as (emoji: string) => void)((payload as { emoji: string }).emoji);
-      }
+      handlerRegistry.invokeReaction((payload as { emoji: string }).emoji);
       return;
     }
     if (type === 'cursor_move') {
-      const fn = (window as unknown as Record<string, unknown>).__handleCursorMove;
-      if (typeof fn === 'function') {
-        (fn as (data: unknown) => void)(payload);
-      }
+      handlerRegistry.invokeCursor(payload as CursorMoveData);
       return;
     }
     baseHandleMessage(type, payload);

@@ -1,9 +1,10 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { useBoard } from '../hooks/useBoard';
 import { COLORS } from '../types';
 import { useTheme } from '../hooks/useTheme';
 import { storage } from '../lib/storage';
 import { hashCode } from '../lib/hash';
+import { useBoardUi } from '../state/BoardUiContext';
 
 export default function Toolbar() {
   const { state, send, dispatch, onLeave, templateMode, isGuest } = useBoard();
@@ -70,14 +71,9 @@ export default function Toolbar() {
     }
   }, [editingTeam]);
 
-  // --- Cursors toggle ---
-  const [cursorsOn, setCursorsOn] = useState(() => storage.read('cursors') !== 'off');
-  const toggleCursors = useCallback(() => {
-    const next = !cursorsOn;
-    setCursorsOn(next);
-    storage.write('cursors', next ? 'on' : 'off');
-    window.dispatchEvent(new CustomEvent('cursors-toggle', { detail: next }));
-  }, [cursorsOn]);
+  // --- Cursors toggle (state + persistence handled by BoardUiContext) ---
+  const { cursorsEnabled: cursorsOn, setCursorsEnabled } = useBoardUi();
+  const toggleCursors = useCallback(() => setCursorsEnabled(!cursorsOn), [cursorsOn, setCursorsEnabled]);
 
   const hasTeam = !!state.teamName;
   const isBoundToTeam = !!state.teamId; // team boards have non-editable "by" field
