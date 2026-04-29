@@ -1,16 +1,16 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { COLORS } from '../types';
 import { useBoard } from '../hooks/useBoard';
 import { useVoteUI } from '../hooks/board/useVoteUI';
 import { useClipboard, type SelectedItem } from '../hooks/board/useClipboard';
 import { useRemoteCursors } from '../hooks/board/useRemoteCursors';
 import { usePanZoom } from '../hooks/board/usePanZoom';
 import { useBoardKeyboard } from '../hooks/board/useBoardKeyboard';
+import { useImageResize } from '../hooks/board/useImageResize';
+import { useSelectionDrag, snapshotSelection } from '../hooks/board/useSelectionDrag';
+import { useMarqueeSelection } from '../hooks/board/useMarqueeSelection';
+import { useRadialMenuItems } from '../hooks/board/useRadialMenuItems';
 import Toolbar from './Toolbar';
-import SectionComponent from './Section';
-import PostItComponent from './PostIt';
-import GroupLabelComponent from './GroupLabel';
-import GroupOutline from './GroupOutline';
+import BoardCanvas from './BoardCanvas';
 import VotePanel from './VotePanel';
 import ReactionButton from './ReactionButton';
 import ReactionRain from './ReactionRain';
@@ -25,10 +25,9 @@ import HiddenBanner from './HiddenBanner';
 import CycleStatsPanel from './CycleStatsPanel';
 import ActionsPanel from './ActionsPanel';
 import { actions as actionsService, type PreviousAction } from '../services/actions';
-import { zoomRef } from '../zoomRef';
 import { storage } from '../lib/storage';
-import { hashCode } from '../lib/hash';
 import { buildMarkdown } from '../lib/buildMarkdown';
+import { organizeBoard } from '../lib/organizeBoard';
 
 export default function Board() {
   const { state, send, userId, templateMode } = useBoard();
@@ -164,18 +163,11 @@ export default function Board() {
   // ── Selection state ──
   const [selection, setSelection] = useState<SelectedItem[]>([]);
 
-  // ── Marquee / drag state ──
-  const [marquee, setMarquee] = useState<{ sx: number; sy: number; ex: number; ey: number } | null>(null);
-  const marqueeRef = useRef<{ boardX: number; boardY: number; screenStartX: number; screenStartY: number } | null>(null);
+  // ── Marquee + selection-drag + image-resize hooks ──
+  const marqueeSelection = useMarqueeSelection();
+  const selectionDrag = useSelectionDrag(send);
+  const imageResize = useImageResize(send);
   const [grabMode, setGrabMode] = useState(false);
-
-  // Drag-selected-items state — `moved` flips to true once the pointer has
-  // travelled past DRAG_THRESHOLD in screen space; until then we emit nothing
-  // so that a plain click never broadcasts a move.
-  const selDragRef = useRef<{ startX: number; startY: number; moved: boolean; snaps: { type: string; id: string; x: number; y: number }[] } | null>(null);
-
-  // Image resize state
-  const imgResizeRef = useRef<{ id: string; startX: number; startY: number; origW: number; origH: number; origX: number; origY: number; corner: string } | null>(null);
 
   // ── Keyboard + system paste subscriptions ──
   useBoardKeyboard({
@@ -322,195 +314,14 @@ export default function Board() {
 
   const closeRadialMenu = useCallback(() => setRadialMenu(null), []);
 
-  const radialMenuItems = useMemo((): RadialMenuItem[] => {
-    const items: RadialMenuItem[] = [];
-    const target = radialMenu?.target || null;
-    const parentSectionId = radialMenu?.parentSectionId || null;
-
-    const hasClipboard = clipboardHasItems();
-
-    const userName = state.users[userId]?.name || 'Unknown';
-
-    // If we have a multi-selection, show bulk actions
-    if (selection.length > 1) {
-      // Check if any selected items are stickies with text
-      const selectedPostIts = selection.filter((s) => s.type === 'postit');
-      const stickiesWithText = selectedPostIts.filter((s) => state.postIts[s.id]?.text);
-
-      if (stickiesWithText.length > 0) {
-        items.push({
-          label: `Turn ${stickiesWithText.length} into actions`,
-          icon: '⚡',
-          action: () => {
-            for (const s of stickiesWithText) {
-              const p = state.postIts[s.id];
-              if (!p?.text) continue;
-              send('add_action', {
-                text: p.text.slice(0, 128),
-                done: false,
-                authorId: userId,
-                authorName: userName,
-                createdAt: Date.now(),
-              });
-            }
-          },
-        });
-      }
-
-      items.push({
-        label: `Copy ${selection.length} items`,
-        icon: '📋',
-        action: () => {
-          copyItems(selection);
-        },
-      });
-      items.push({
-        label: 'Copy as Markdown',
-        icon: '📝',
-        action: () => {
-          const ids = new Set(selection.map((s) => s.id));
-          handleExportMarkdown(ids);
-        },
-      });
-      items.push({
-        label: `Delete ${selection.length} items`,
-        icon: '🗑️',
-        variant: 'danger',
-        action: () => {
-          const deleteMap: Record<string, string> = { postit: 'delete_postit', group: 'delete_group', section: 'delete_section', image: 'delete_image' };
-          for (const item of selection) {
-            send(deleteMap[item.type], { id: item.id });
-          }
-          setSelection([]);
-        },
-      });
-      return items;
-    }
-
-    if (target) {
-      // Right-clicked on a specific item — show item-specific menu
-      const labelMap: Record<string, string> = { postit: 'sticky', group: 'group', section: 'section', image: 'image' };
-      const deleteMap: Record<string, string> = { postit: 'delete_postit', group: 'delete_group', section: 'delete_section', image: 'delete_image' };
-
-      // Turn sticky into action
-      if (target.type === 'postit') {
-        const p = state.postIts[target.id];
-        if (p?.text) {
-          items.push({
-            label: 'Turn into action',
-            icon: '⚡',
-            action: () => {
-              send('add_action', {
-                text: p.text.slice(0, 128),
-                done: false,
-                authorId: userId,
-                authorName: userName,
-                createdAt: Date.now(),
-              });
-            },
-          });
-        }
-      }
-
-      items.push({
-        label: `Copy ${labelMap[target.type]}`,
-        icon: '📋',
-        action: () => {
-          copyItems([target]);
-        },
-      });
-      items.push({
-        label: `Delete ${labelMap[target.type]}`,
-        icon: '🗑️',
-        variant: 'danger',
-        action: () => {
-          send(deleteMap[target.type], { id: target.id });
-        },
-      });
-    } else {
-      // Right-clicked on empty area — show creation menu
-      const pos = radialMenu ? screenToCanvas(radialMenu.x, radialMenu.y) : { x: 200, y: 200 };
-
-      // If inside a section, use that section's color for stickies; otherwise use the floating menu selection
-      const stickyColor = parentSectionId
-        ? (state.sections[parentSectionId]?.colorIdx || 0)
-        : ctxPostItColor;
-
-      items.push({
-        label: 'New Sticky',
-        icon: '📝',
-        action: () => {
-          send('add_postit', {
-            sectionId: parentSectionId || '',
-            authorId: userId,
-            text: '',
-            x: pos.x,
-            y: pos.y,
-            colorIdx: stickyColor,
-          });
-        },
-      });
-
-      items.push({
-        label: 'New Section',
-        icon: '📋',
-        action: () => {
-          send('add_section', {
-            title: 'New Section',
-            colorIdx: ctxSectionColor,
-            x: pos.x,
-            y: pos.y,
-            w: 500,
-            h: 400,
-          });
-        },
-      });
-
-      items.push({
-        label: 'New Group',
-        icon: '📂',
-        action: () => {
-          send('add_group', {
-            label: 'Group',
-            x: pos.x,
-            y: pos.y,
-            w: 200,
-            h: 40,
-          });
-        },
-      });
-
-      if (hasClipboard) {
-        items.push({
-          label: 'Paste',
-          icon: '📌',
-          action: () => {
-            pasteItems(pos.x, pos.y);
-          },
-        });
-      }
-
-      if (!votingActive) {
-        items.push({
-          label: 'Start Vote',
-          icon: '🗳️',
-          action: () => {
-            window.dispatchEvent(new CustomEvent('toggle-vote-panel'));
-          },
-        });
-      } else {
-        items.push({
-          label: 'End Vote',
-          icon: '🏁',
-          action: () => {
-            send('vote_close', {});
-          },
-        });
-      }
-    }
-
-    return items;
-  }, [radialMenu, screenToCanvas, send, userId, votingActive, ctxPostItColor, ctxSectionColor, state.sections, state.postIts, state.users, selection, copyItems, pasteItems]);
+  const radialMenuItems = useRadialMenuItems({
+    state, userId, selection, radialMenu,
+    ctxPostItColor, ctxSectionColor, votingActive,
+    screenToCanvas, hasClipboard: clipboardHasItems,
+    send, copyItems, pasteItems,
+    clearSelection: () => setSelection([]),
+    onExportMarkdown: handleExportMarkdown,
+  });
 
   // ── Pan / Marquee / Selection-drag handlers ──
   const DRAG_THRESHOLD = 4;
@@ -571,12 +382,7 @@ export default function Board() {
         const el = boardRef.current;
         if (el) el.setPointerCapture(e.pointerId);
         const rect = el ? el.getBoundingClientRect() : { left: 0, top: 0 };
-        marqueeRef.current = {
-          boardX: e.clientX - rect.left,
-          boardY: e.clientY - rect.top,
-          screenStartX: e.clientX,
-          screenStartY: e.clientY,
-        };
+        marqueeSelection.start({ clientX: e.clientX, clientY: e.clientY }, rect);
         setSelection([]);
         return;
       }
@@ -588,41 +394,23 @@ export default function Board() {
           e.preventDefault();
           e.stopPropagation();
           const alreadySelected = selection.some((s) => s.type === 'image' && s.id === clickedTarget.id);
-          if (!alreadySelected) {
-            setSelection([{ type: 'image', id: clickedTarget.id }]);
-          }
-          // Start drag
+          if (!alreadySelected) setSelection([{ type: 'image', id: clickedTarget.id }]);
           const el = boardRef.current;
           if (el) el.setPointerCapture(e.pointerId);
-          const img = (state.images || {})[clickedTarget.id];
-          const snaps: { type: string; id: string; x: number; y: number }[] = [];
-          if (alreadySelected) {
-            for (const item of selection) {
-              if (item.type === 'postit') {
-                const p = state.postIts[item.id];
-                if (p) snaps.push({ type: 'postit', id: item.id, x: p.x, y: p.y });
-              } else if (item.type === 'section') {
-                const s = state.sections[item.id];
-                if (s) snaps.push({ type: 'section', id: item.id, x: s.x, y: s.y });
-              } else if (item.type === 'group') {
-                const g = state.groups[item.id];
-                if (g) snaps.push({ type: 'group', id: item.id, x: g.x, y: g.y });
-              } else if (item.type === 'image') {
-                const im = (state.images || {})[item.id];
-                if (im) snaps.push({ type: 'image', id: item.id, x: im.x, y: im.y });
-              }
-            }
-          } else if (img) {
-            snaps.push({ type: 'image', id: clickedTarget.id, x: img.x, y: img.y });
-          }
-          selDragRef.current = { startX: e.clientX, startY: e.clientY, moved: false, snaps };
+          const dragSnaps = alreadySelected
+            ? snapshotSelection(selection, state)
+            : (() => {
+                const img = (state.images || {})[clickedTarget.id];
+                return img ? [{ type: 'image' as const, id: clickedTarget.id, x: img.x, y: img.y }] : [];
+              })();
+          selectionDrag.start(dragSnaps, { clientX: e.clientX, clientY: e.clientY });
           return;
         }
       }
 
-      // Left-click on a selected item: start dragging the selection
-      // During voting, dragging is disabled so that vote-click + tiny mouse wobble
-      // doesn't move cards/sections for everyone.
+      // Left-click on a selected item: start dragging the selection.
+      // During voting, dragging is disabled so vote-click + wobble doesn't
+      // move cards/sections for everyone.
       if (e.button === 0 && selection.length > 0 && !votingActive) {
         const clickedTarget = findItemTarget(target);
         if (clickedTarget && selection.some((s) => s.type === clickedTarget.type && s.id === clickedTarget.id)) {
@@ -630,29 +418,12 @@ export default function Board() {
           e.stopPropagation();
           const el = boardRef.current;
           if (el) el.setPointerCapture(e.pointerId);
-          // Snapshot positions of all selected items
-          const snaps: { type: string; id: string; x: number; y: number }[] = [];
-          for (const item of selection) {
-            if (item.type === 'postit') {
-              const p = state.postIts[item.id];
-              if (p) snaps.push({ type: 'postit', id: item.id, x: p.x, y: p.y });
-            } else if (item.type === 'section') {
-              const s = state.sections[item.id];
-              if (s) snaps.push({ type: 'section', id: item.id, x: s.x, y: s.y });
-            } else if (item.type === 'group') {
-              const g = state.groups[item.id];
-              if (g) snaps.push({ type: 'group', id: item.id, x: g.x, y: g.y });
-            } else if (item.type === 'image') {
-              const img = (state.images || {})[item.id];
-              if (img) snaps.push({ type: 'image', id: item.id, x: img.x, y: img.y });
-            }
-          }
-          selDragRef.current = { startX: e.clientX, startY: e.clientY, moved: false, snaps };
+          selectionDrag.start(snapshotSelection(selection, state), { clientX: e.clientX, clientY: e.clientY });
           return;
         }
       }
     },
-    [radialMenu, creationMode, screenToCanvas, placeItem, grabMode, selection, findItemTarget, votingActive, state.postIts, state.sections, state.groups, state.images],
+    [radialMenu, creationMode, screenToCanvas, placeItem, grabMode, selection, findItemTarget, votingActive, state, marqueeSelection, selectionDrag],
   );
 
   const handleBoardPointerMove = useCallback(
@@ -677,78 +448,12 @@ export default function Board() {
         return;
       }
 
-      // Marquee selection
-      if (marqueeRef.current) {
-        const dx = e.clientX - marqueeRef.current.screenStartX;
-        const dy = e.clientY - marqueeRef.current.screenStartY;
-        if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-          setMarquee({
-            sx: marqueeRef.current.boardX,
-            sy: marqueeRef.current.boardY,
-            ex: marqueeRef.current.boardX + dx,
-            ey: marqueeRef.current.boardY + dy,
-          });
-        }
-        return;
-      }
-
-      // Image resize
-      if (imgResizeRef.current) {
-        const z = zoomRef.current || 1;
-        const r = imgResizeRef.current;
-        const dx = (e.clientX - r.startX) / z;
-        const dy = (e.clientY - r.startY) / z;
-        const aspect = r.origW / r.origH;
-        let newW = r.origW;
-        let newH = r.origH;
-        let newX = r.origX;
-        let newY = r.origY;
-        if (r.corner === 'se') {
-          newW = Math.max(40, r.origW + dx);
-          newH = newW / aspect;
-        } else if (r.corner === 'sw') {
-          newW = Math.max(40, r.origW - dx);
-          newH = newW / aspect;
-          newX = r.origX + r.origW - newW;
-        } else if (r.corner === 'ne') {
-          newW = Math.max(40, r.origW + dx);
-          newH = newW / aspect;
-          newY = r.origY + r.origH - newH;
-        } else if (r.corner === 'nw') {
-          newW = Math.max(40, r.origW - dx);
-          newH = newW / aspect;
-          newX = r.origX + r.origW - newW;
-          newY = r.origY + r.origH - newH;
-        }
-        send('move_image', { id: r.id, x: Math.round(newX), y: Math.round(newY), w: Math.round(newW), h: Math.round(newH) });
-        return;
-      }
-
-      // Selection drag
-      if (selDragRef.current) {
-        const sdx = e.clientX - selDragRef.current.startX;
-        const sdy = e.clientY - selDragRef.current.startY;
-        if (!selDragRef.current.moved && Math.abs(sdx) <= DRAG_THRESHOLD && Math.abs(sdy) <= DRAG_THRESHOLD) return;
-        selDragRef.current.moved = true;
-
-        const z = zoomRef.current || 1;
-        const dx = sdx / z;
-        const dy = sdy / z;
-        for (const snap of selDragRef.current.snaps) {
-          if (snap.type === 'postit') {
-            send('move_postit', { id: snap.id, x: snap.x + dx, y: snap.y + dy });
-          } else if (snap.type === 'section') {
-            send('update_section', { id: snap.id, x: snap.x + dx, y: snap.y + dy });
-          } else if (snap.type === 'group') {
-            send('update_group', { id: snap.id, x: snap.x + dx, y: snap.y + dy });
-          } else if (snap.type === 'image') {
-            send('move_image', { id: snap.id, x: snap.x + dx, y: snap.y + dy });
-          }
-        }
-        return;
-      }
+      // Delegate to whichever pointer interaction is in flight.
+      if (marqueeSelection.onPointerMove(e)) return;
+      if (imageResize.onPointerMove(e)) return;
+      if (selectionDrag.onPointerMove(e)) return;
     },
-    [applyTransform, creationMode, screenToCanvas, send],
+    [applyTransform, creationMode, screenToCanvas, marqueeSelection, imageResize, selectionDrag],
   );
 
   const handleBoardPointerUp = useCallback(() => {
@@ -761,57 +466,14 @@ export default function Board() {
       }
     }
 
-    // End marquee — compute selection
-    if (marqueeRef.current) {
-      if (!marquee) {
-        // Just a click without drag — clear selection
-        setSelection([]);
-      } else {
-        // Convert board-relative marquee corners to canvas coords for hit-testing
-        // boardRelative → canvas: (boardPos - pan) / zoom
-        const t = transform.current;
-        const c1 = { x: (marquee.sx - t.x) / t.z, y: (marquee.sy - t.y) / t.z };
-        const c2 = { x: (marquee.ex - t.x) / t.z, y: (marquee.ey - t.y) / t.z };
-        const minX = Math.min(c1.x, c2.x);
-        const maxX = Math.max(c1.x, c2.x);
-        const minY = Math.min(c1.y, c2.y);
-        const maxY = Math.max(c1.y, c2.y);
+    // End marquee — commit hit-tested selection (or clear on a bare click).
+    const committed = marqueeSelection.commit(transform.current, state);
+    if (committed !== null) setSelection(committed);
 
-        const selected: SelectedItem[] = [];
-
-        // Check post-its (160x100)
-        for (const p of Object.values(state.postIts)) {
-          const px = p.x, py = p.y, pw = 160, ph = 100;
-          if (px + pw > minX && px < maxX && py + ph > minY && py < maxY) {
-            selected.push({ type: 'postit', id: p.id });
-          }
-        }
-
-        // Check groups
-        for (const g of Object.values(state.groups)) {
-          if (g.x + g.w > minX && g.x < maxX && g.y + g.h > minY && g.y < maxY) {
-            selected.push({ type: 'group', id: g.id });
-          }
-        }
-
-        // Check images
-        for (const img of Object.values(state.images || {})) {
-          if (img.x + img.w > minX && img.x < maxX && img.y + img.h > minY && img.y < maxY) {
-            selected.push({ type: 'image' as SelectedItem['type'], id: img.id });
-          }
-        }
-
-        setSelection(selected);
-      }
-      marqueeRef.current = null;
-      setMarquee(null);
-    }
-
-    // End selection drag
-    selDragRef.current = null;
-    // End image resize
-    imgResizeRef.current = null;
-  }, [grabMode, marquee, state.postIts, state.sections, state.groups, state.images]);
+    // End selection drag / image resize.
+    selectionDrag.onPointerUp();
+    imageResize.onPointerUp();
+  }, [grabMode, state, marqueeSelection, selectionDrag, imageResize]);
 
   // Double-click on empty area toggles grab mode
   const handleBoardDoubleClick = useCallback(
@@ -881,255 +543,11 @@ export default function Board() {
     smoothZoom(resetTransform);
   }, [resetTransform, smoothZoom]);
 
-  // ── OCD Panic Button — organize everything into neat grids ──
-  const organizeBoard = useCallback(() => {
-    const ORIGIN = 100;
-    const SECTION_GAP = 40;
-    const SEC_PAD_TOP = 50; // section header height
-    const SEC_PAD = 16;
-    const POSTIT_W = 160;
-    const POSTIT_H = 110;
-    const POSTIT_GAP = 12;
-    const GROUP_PAD = 10;
-    const GROUP_GAP = 60; // enough to clear group outline padding (24px convex hull + margin)
-    const GROUP_LABEL_H = 32;
+  // ── OCD Panic Button — dispatch the moves computed by lib/organizeBoard ──
+  const handleOrganize = useCallback(() => {
+    for (const m of organizeBoard(state)) send(m.msg, m.data);
+  }, [state, send]);
 
-    const allSections = Object.values(state.sections).sort((a, b) => a.order - b.order);
-    const allPostIts = Object.values(state.postIts);
-    const allGroups = Object.values(state.groups);
-
-    // Collect all moves to send at the end
-    type Move = { msg: string; data: Record<string, unknown> };
-    const moves: Move[] = [];
-
-    // Grid layout helper — picks the column count whose resulting
-    // (width × height) is closest to square, given a non-square item size.
-    // e.g. for 160×110 post-its a 3-wide grid is often flatter than a
-    // 2-wide grid; this chooses whichever makes the content most square.
-    function grid(count: number, itemW: number, itemH: number, gap: number) {
-      if (count === 0) return { cols: 0, rows: 0, w: 0, h: 0, pos: [] as { x: number; y: number }[] };
-      let bestCols = 1;
-      let bestDiff = Infinity;
-      for (let c = 1; c <= count; c++) {
-        const r = Math.ceil(count / c);
-        const w = c * itemW + Math.max(0, c - 1) * gap;
-        const h = r * itemH + Math.max(0, r - 1) * gap;
-        const diff = Math.abs(w - h);
-        // Prefer a slightly taller layout over a wider one on ties — boards
-        // usually have horizontal real-estate to spare; it's the flat-wide
-        // shape that feels wrong.
-        if (diff < bestDiff || (diff === bestDiff && c < bestCols)) {
-          bestDiff = diff;
-          bestCols = c;
-        }
-      }
-      const cols = bestCols;
-      const rows = Math.ceil(count / cols);
-      const pos: { x: number; y: number }[] = [];
-      for (let i = 0; i < count; i++) {
-        pos.push({ x: (i % cols) * (itemW + gap), y: Math.floor(i / cols) * (itemH + gap) });
-      }
-      return { cols, rows, w: cols * itemW + Math.max(0, cols - 1) * gap, h: rows * itemH + Math.max(0, rows - 1) * gap, pos };
-    }
-
-    // Phase 1: compute each section's internal layout and required size
-    type SecLayout = { sec: typeof allSections[0]; w: number; h: number };
-    const secLayouts: SecLayout[] = [];
-
-    for (const sec of allSections) {
-      const secPostIts = allPostIts.filter((p) => p.sectionId === sec.id);
-      // Groups that have at least one post-it in this section
-      const secGroupIds = new Set<string>();
-      for (const p of secPostIts) { if (p.groupId) secGroupIds.add(p.groupId); }
-      const secGroups = allGroups.filter((g) => secGroupIds.has(g.id));
-      const loosePostIts = secPostIts.filter((p) => !p.groupId || !secGroupIds.has(p.groupId!));
-
-      // Compute group internal sizes
-      const groupInfos = secGroups.map((g) => {
-        const gp = secPostIts.filter((p) => p.groupId === g.id);
-        const gl = grid(gp.length, POSTIT_W, POSTIT_H, POSTIT_GAP);
-        const gw = Math.max(200, gl.w + GROUP_PAD * 2);
-        const gh = GROUP_LABEL_H + gl.h + GROUP_PAD * 2;
-        return { group: g, postIts: gp, innerGrid: gl, w: gw, h: gh };
-      });
-
-      let contentH = 0;
-      let contentW = 0;
-
-      // Groups arranged in a grid
-      if (groupInfos.length > 0) {
-        const maxGW = Math.max(...groupInfos.map((g) => g.w));
-        const maxGH = Math.max(...groupInfos.map((g) => g.h));
-        const gGrid = grid(groupInfos.length, maxGW, maxGH, GROUP_GAP);
-        contentW = Math.max(contentW, gGrid.w);
-        contentH += gGrid.h;
-        if (loosePostIts.length > 0) contentH += GROUP_GAP;
-      }
-
-      // Loose post-its grid
-      const looseGrid = grid(loosePostIts.length, POSTIT_W, POSTIT_H, POSTIT_GAP);
-      if (loosePostIts.length > 0) {
-        contentW = Math.max(contentW, looseGrid.w);
-        contentH += looseGrid.h;
-      }
-
-      // Size sections purely from their content so OCD can shrink wide
-      // sections back to a square-ish shape. A small floor keeps empty
-      // sections usable.
-      const MIN_SEC_W = 300;
-      const MIN_SEC_H = 200;
-      const neededW = Math.max(MIN_SEC_W, contentW + SEC_PAD * 2);
-      const neededH = Math.max(MIN_SEC_H, contentH + SEC_PAD_TOP + SEC_PAD);
-      secLayouts.push({ sec, w: neededW, h: neededH });
-    }
-
-    // Phase 2: arrange sections in a grid, compute final absolute positions for everything
-    const maxSecW = secLayouts.length > 0 ? Math.max(...secLayouts.map((s) => s.w)) : 0;
-    const maxSecH = secLayouts.length > 0 ? Math.max(...secLayouts.map((s) => s.h)) : 0;
-    const secGrid = grid(allSections.length, maxSecW, maxSecH, SECTION_GAP);
-
-    for (let si = 0; si < allSections.length; si++) {
-      const sec = allSections[si];
-      const sl = secLayouts[si];
-      const secX = ORIGIN + secGrid.pos[si].x;
-      const secY = ORIGIN + secGrid.pos[si].y;
-
-      moves.push({ msg: 'update_section', data: { ...sec, x: secX, y: secY, w: sl.w, h: sl.h } });
-
-      // Re-derive the same internal layout to get positions (relative to section top-left)
-      const secPostIts = allPostIts.filter((p) => p.sectionId === sec.id);
-      const secGroupIds = new Set<string>();
-      for (const p of secPostIts) { if (p.groupId) secGroupIds.add(p.groupId); }
-      const secGroups = allGroups.filter((g) => secGroupIds.has(g.id));
-      const loosePostIts = secPostIts.filter((p) => !p.groupId || !secGroupIds.has(p.groupId!));
-
-      const groupInfos = secGroups.map((g) => {
-        const gp = secPostIts.filter((p) => p.groupId === g.id);
-        const gl = grid(gp.length, POSTIT_W, POSTIT_H, POSTIT_GAP);
-        const gw = Math.max(200, gl.w + GROUP_PAD * 2);
-        const gh = GROUP_LABEL_H + gl.h + GROUP_PAD * 2;
-        return { group: g, postIts: gp, innerGrid: gl, w: gw, h: gh };
-      });
-
-      let cursorY = 0; // content cursor relative to (secX + SEC_PAD, secY + SEC_PAD_TOP)
-
-      if (groupInfos.length > 0) {
-        const maxGW = Math.max(...groupInfos.map((g) => g.w));
-        const maxGH = Math.max(...groupInfos.map((g) => g.h));
-        const gGrid = grid(groupInfos.length, maxGW, maxGH, GROUP_GAP);
-
-        for (let gi = 0; gi < groupInfos.length; gi++) {
-          const gInfo = groupInfos[gi];
-          const gx = secX + SEC_PAD + gGrid.pos[gi].x;
-          const gy = secY + SEC_PAD_TOP + gGrid.pos[gi].y;
-          moves.push({ msg: 'update_group', data: { ...gInfo.group, x: gx, y: gy, w: gInfo.w, h: gInfo.h } });
-
-          for (let pi = 0; pi < gInfo.postIts.length; pi++) {
-            const p = gInfo.postIts[pi];
-            moves.push({
-              msg: 'move_postit',
-              data: { ...p, x: gx + GROUP_PAD + gInfo.innerGrid.pos[pi].x, y: gy + GROUP_LABEL_H + GROUP_PAD + gInfo.innerGrid.pos[pi].y },
-            });
-          }
-        }
-        cursorY += gGrid.h;
-        if (loosePostIts.length > 0) cursorY += GROUP_GAP;
-      }
-
-      if (loosePostIts.length > 0) {
-        const lGrid = grid(loosePostIts.length, POSTIT_W, POSTIT_H, POSTIT_GAP);
-        for (let pi = 0; pi < loosePostIts.length; pi++) {
-          const p = loosePostIts[pi];
-          moves.push({
-            msg: 'move_postit',
-            data: { ...p, x: secX + SEC_PAD + lGrid.pos[pi].x, y: secY + SEC_PAD_TOP + cursorY + lGrid.pos[pi].y },
-          });
-        }
-      }
-    }
-
-    // Orphan post-its (no section) — separate grouped from ungrouped
-    const orphanPostIts = allPostIts.filter((p) => !p.sectionId);
-    const sectionGroupIds = new Set<string>();
-    for (const sec of allSections) {
-      for (const p of allPostIts) {
-        if (p.sectionId === sec.id && p.groupId) sectionGroupIds.add(p.groupId);
-      }
-    }
-    // Orphan groups: groups with orphan post-its that aren't in any section
-    const orphanGroupIds = new Set<string>();
-    for (const p of orphanPostIts) {
-      if (p.groupId && !sectionGroupIds.has(p.groupId)) orphanGroupIds.add(p.groupId);
-    }
-    const orphanGrouped = allGroups.filter((g) => orphanGroupIds.has(g.id));
-    const orphanLoose = orphanPostIts.filter((p) => !p.groupId || !orphanGroupIds.has(p.groupId!));
-    // Empty groups (no post-its at all, and not in a section)
-    const usedGroupIds = new Set(allPostIts.filter((p) => p.groupId).map((p) => p.groupId));
-    const emptyGroups = allGroups.filter((g) => !usedGroupIds.has(g.id) && !sectionGroupIds.has(g.id));
-
-    if (orphanGrouped.length > 0 || orphanLoose.length > 0 || emptyGroups.length > 0) {
-      let belowY = ORIGIN;
-      if (secLayouts.length > 0) {
-        for (let i = 0; i < secLayouts.length; i++) {
-          belowY = Math.max(belowY, ORIGIN + secGrid.pos[i].y + secLayouts[i].h);
-        }
-        belowY += SECTION_GAP;
-      }
-
-      let cursorY = belowY;
-
-      // Place orphan groups first (with their post-its)
-      if (orphanGrouped.length > 0) {
-        const orphanGroupInfos = orphanGrouped.map((g) => {
-          const gp = orphanPostIts.filter((p) => p.groupId === g.id);
-          const gl = grid(gp.length, POSTIT_W, POSTIT_H, POSTIT_GAP);
-          const gw = Math.max(200, gl.w + GROUP_PAD * 2);
-          const gh = GROUP_LABEL_H + gl.h + GROUP_PAD * 2;
-          return { group: g, postIts: gp, innerGrid: gl, w: gw, h: gh };
-        });
-        const maxGW = Math.max(...orphanGroupInfos.map((g) => g.w));
-        const maxGH = Math.max(...orphanGroupInfos.map((g) => g.h));
-        const gGrid = grid(orphanGroupInfos.length, maxGW, maxGH, GROUP_GAP);
-
-        for (let gi = 0; gi < orphanGroupInfos.length; gi++) {
-          const gInfo = orphanGroupInfos[gi];
-          const gx = ORIGIN + gGrid.pos[gi].x;
-          const gy = cursorY + gGrid.pos[gi].y;
-          moves.push({ msg: 'update_group', data: { ...gInfo.group, x: gx, y: gy, w: gInfo.w, h: gInfo.h } });
-          for (let pi = 0; pi < gInfo.postIts.length; pi++) {
-            const p = gInfo.postIts[pi];
-            moves.push({
-              msg: 'move_postit',
-              data: { ...p, x: gx + GROUP_PAD + gInfo.innerGrid.pos[pi].x, y: gy + GROUP_LABEL_H + GROUP_PAD + gInfo.innerGrid.pos[pi].y },
-            });
-          }
-        }
-        cursorY += gGrid.h + GROUP_GAP;
-      }
-
-      // Then place ungrouped orphan post-its below the groups
-      if (orphanLoose.length > 0) {
-        const oGrid = grid(orphanLoose.length, POSTIT_W, POSTIT_H, POSTIT_GAP);
-        for (let i = 0; i < orphanLoose.length; i++) {
-          moves.push({ msg: 'move_postit', data: { ...orphanLoose[i], x: ORIGIN + oGrid.pos[i].x, y: cursorY + oGrid.pos[i].y } });
-        }
-        cursorY += oGrid.h + GROUP_GAP;
-      }
-
-      // Empty groups at the end
-      if (emptyGroups.length > 0) {
-        const eGrid = grid(emptyGroups.length, 200, 60, POSTIT_GAP);
-        for (let i = 0; i < emptyGroups.length; i++) {
-          moves.push({ msg: 'update_group', data: { ...emptyGroups[i], x: ORIGIN + eGrid.pos[i].x, y: cursorY + eGrid.pos[i].y } });
-        }
-      }
-    }
-
-    // Fire all moves
-    for (const m of moves) {
-      send(m.msg, m.data);
-    }
-  }, [state.sections, state.postIts, state.groups, send]);
 
   // Build set of selected IDs for quick lookup
   const selectedIds = useMemo(() => new Set(selection.map((s) => `${s.type}:${s.id}`)), [selection]);
@@ -1151,171 +569,44 @@ export default function Board() {
           onDoubleClick={handleBoardDoubleClick}
           onContextMenu={handleContextMenu}
         >
-          <div
-            className="board-canvas"
-            ref={canvasRef}
-            style={{ transformOrigin: '0 0' }}
-          >
-            {groups.map((g) => (
-              <GroupOutline
-                key={g.id}
-                group={g}
-                postIts={postIts}
-                canVote={canVote && hasRemainingVotes}
-                onVote={handleGroupVote}
-              />
-            ))}
-
-            {sections.map((s) => (
-              <SectionComponent key={s.id} section={s} selected={selectedIds.has(`section:${s.id}`)} grabMode={grabMode} votingActive={votingActive} />
-            ))}
-
-            {groups.map((g) => (
-              <GroupLabelComponent
-                key={g.id}
-                group={g}
-                voteCount={getVoteCount(g.id)}
-                canVote={canVote && hasRemainingVotes}
-                canUnvote={canVote}
-                onVote={handleGroupVote}
-                onUnvote={handleGroupUnvote}
-                rank={rankMap[g.id] || 0}
-                selected={selectedIds.has(`group:${g.id}`)}
-                votingActive={votingActive}
-                grabMode={grabMode}
-              />
-            ))}
-
-            {postIts.map((p) => (
-              <PostItComponent
-                key={p.id}
-                postIt={p}
-                colorIdx={p.sectionId ? getSectionColorIdx(p.sectionId) : (p.colorIdx || 0)}
-                voteCount={getEffectiveVoteCount(p.id)}
-                canVote={canVote && hasRemainingVotes}
-                canUnvote={canVote}
-                inGroup={!!p.groupId}
-                onVote={handleVote}
-                onUnvote={handleUnvote}
-                rank={getEffectiveRank(p.id)}
-                selected={selectedIds.has(`postit:${p.id}`)}
-                votingActive={votingActive}
-                grabMode={grabMode}
-              />
-            ))}
-
-            {/* Images */}
-            {Object.values(state.images || {}).map((img) => {
-              const isSel = selectedIds.has(`image:${img.id}`);
-              return (
-                <div
-                  key={img.id}
-                  className={`board-image ${isSel ? 'selected' : ''}`}
-                  style={{
-                    transform: `translate(${img.x}px, ${img.y}px)`,
-                    width: img.w,
-                    height: img.h,
-                  }}
-                  data-item-type="image"
-                  data-item-id={img.id}
-                >
-                  <img src={img.url} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 6, pointerEvents: 'none' }} />
-                  {isSel && ['nw', 'ne', 'sw', 'se'].map((corner) => (
-                    <div
-                      key={corner}
-                      className={`image-resize-handle image-resize-${corner}`}
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const el = boardRef.current;
-                        if (el) el.setPointerCapture(e.pointerId);
-                        imgResizeRef.current = {
-                          id: img.id,
-                          startX: e.clientX,
-                          startY: e.clientY,
-                          origW: img.w,
-                          origH: img.h,
-                          origX: img.x,
-                          origY: img.y,
-                          corner,
-                        };
-                      }}
-                    />
-                  ))}
-                </div>
-              );
-            })}
-
-            {/* Ghost preview for creation mode */}
-            {creationMode && ghostPos && (
-              <div
-                className={`creation-ghost creation-ghost-${creationMode}`}
-                style={{ transform: `translate(${ghostPos.x}px, ${ghostPos.y}px)` }}
-              >
-                {creationMode === 'postit' && '📝'}
-                {creationMode === 'group' && '⊞ Group'}
-                {creationMode === 'section' && '▦ Section'}
-              </div>
-            )}
-
-            {/* Remote cursors */}
-            {cursorsEnabled && remoteCursors.map((c) => (
-              <div
-                key={`cursor-${c.userId}`}
-                className="remote-cursor"
-                style={{ transform: `translate(${c.x}px, ${c.y}px)` }}
-              >
-                <svg className="remote-cursor-arrow" width="16" height="20" viewBox="0 0 16 20">
-                  <path d="M0 0 L0 16 L4.5 11.5 L8 20 L11 19 L7.5 10.5 L14 10.5 Z" fill={COLORS[Math.abs(hashCode(c.userId)) % COLORS.length]} stroke="var(--bg)" strokeWidth="1" />
-                </svg>
-                <span
-                  className="remote-cursor-label"
-                  style={{ background: COLORS[Math.abs(hashCode(c.userId)) % COLORS.length] }}
-                >
-                  {c.name.split(' ')[0]}
-                </span>
-              </div>
-            ))}
-
-            {/* Selection outlines (in canvas space) */}
-            {selection.map((item) => {
-              let x = 0, y = 0, w = 0, h = 0;
-              if (item.type === 'postit') {
-                const p = state.postIts[item.id];
-                if (!p) return null;
-                x = p.x; y = p.y; w = 160; h = 100;
-              } else if (item.type === 'section') {
-                const s = state.sections[item.id];
-                if (!s) return null;
-                x = s.x; y = s.y; w = s.w; h = s.h;
-              } else if (item.type === 'group') {
-                const g = state.groups[item.id];
-                if (!g) return null;
-                x = g.x; y = g.y; w = g.w; h = g.h;
-              } else if (item.type === 'image') {
-                const img = (state.images || {})[item.id];
-                if (!img) return null;
-                x = img.x; y = img.y; w = img.w; h = img.h;
-              }
-              return (
-                <div
-                  key={`sel-${item.type}-${item.id}`}
-                  className="selection-outline"
-                  style={{ transform: `translate(${x - 3}px, ${y - 3}px)`, width: w + 6, height: h + 6 }}
-                />
-              );
-            })}
-          </div>
+          <BoardCanvas
+            canvasRef={canvasRef}
+            boardRef={boardRef}
+            state={state}
+            postIts={postIts}
+            sections={sections}
+            groups={groups}
+            selection={selection}
+            selectedIds={selectedIds}
+            canVote={canVote}
+            hasRemainingVotes={hasRemainingVotes}
+            votingActive={votingActive}
+            rankMap={rankMap}
+            getVoteCount={getVoteCount}
+            getEffectiveVoteCount={getEffectiveVoteCount}
+            getEffectiveRank={getEffectiveRank}
+            getSectionColorIdx={getSectionColorIdx}
+            onVote={handleVote}
+            onUnvote={handleUnvote}
+            onGroupVote={handleGroupVote}
+            onGroupUnvote={handleGroupUnvote}
+            grabMode={grabMode}
+            creationMode={creationMode}
+            ghostPos={ghostPos}
+            cursorsEnabled={cursorsEnabled}
+            remoteCursors={remoteCursors}
+            startImageResize={imageResize.start}
+          />
 
           {/* Marquee selection rectangle (screen space, inside .board but outside canvas) */}
-          {marquee && (
+          {marqueeSelection.marquee && (
             <div
               className="marquee-rect"
               style={{
-                left: Math.min(marquee.sx, marquee.ex),
-                top: Math.min(marquee.sy, marquee.ey),
-                width: Math.abs(marquee.ex - marquee.sx),
-                height: Math.abs(marquee.ey - marquee.sy),
+                left: Math.min(marqueeSelection.marquee.sx, marqueeSelection.marquee.ex),
+                top: Math.min(marqueeSelection.marquee.sy, marqueeSelection.marquee.ey),
+                width: Math.abs(marqueeSelection.marquee.ex - marqueeSelection.marquee.sx),
+                height: Math.abs(marqueeSelection.marquee.ey - marqueeSelection.marquee.sy),
               }}
             />
           )}
@@ -1420,7 +711,7 @@ export default function Board() {
           <div className="ocd-wrap">
             <button
               className="ocd-btn"
-              onClick={organizeBoard}
+              onClick={handleOrganize}
             >
               🧹 OCD
             </button>
