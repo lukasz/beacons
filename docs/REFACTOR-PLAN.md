@@ -224,41 +224,49 @@ context, no globals.
 
 ---
 
-## Phase 5 — Split `Dashboard.tsx`
+## Phase 5a — Lift standalone helpers + modals
 
-The biggest single file. Three apps in one.
-
-**Create:**
+**Created in Phase 5a:**
 ```
 src/pages/dashboard/
-  Dashboard.tsx                 # ~250 lines: layout, tab routing, modal dispatch
-  BoardsTab.tsx
-  ActionsTab.tsx
-  TeamsTab.tsx
   teams/
-    TeamManager.tsx             # lift from Dashboard.tsx:2229
-    TeamTabCreateModal.tsx      # lift from Dashboard.tsx:2397
-    TeamTabSelector.tsx         # lift from Dashboard.tsx:2516
-    TeamMultiSelect.tsx         # lift from Dashboard.tsx:2560
+    TeamManager.tsx          # lifted from Dashboard.tsx
+    TeamTabCreateModal.tsx   # lifted
+    TeamTabSelector.tsx      # lifted
+    TeamMultiSelect.tsx      # lifted
   modals/
-    NewBoardModal.tsx
-    TemplatePickerModal.tsx
-  hooks/
-    useTeamPageFilters.ts       # the 8-setter cluster on line 1356 → reducer
+    NewBoardModal.tsx        # extracted from inline render tree
+    TemplatePickerModal.tsx  # extracted from inline render tree
 ```
 
-Each tab calls services from Phase 2; no `supabase.` import anywhere in
-the dashboard tree.
+**Result:** Dashboard.tsx 2451 → ~2000 lines (-18%). Six new files,
+each with focused responsibility. Tests added for the four most
+testable ones (NewBoardModal, TemplatePickerModal, TeamMultiSelect,
+TeamTabSelector).
 
-**Tests:**
-- `BoardsTab.test.tsx` — renders empty state, renders summaries, calls
-  `boards.archive` on archive click.
-- `TeamsTab.test.tsx` — renders teams from `teams.list`.
-- `useTeamPageFilters.test.ts` — reducer transitions.
+## Phase 5b — Tab content split
+
+The three tab branches (boards / actions / teams) make up ~1300 lines
+of the remaining Dashboard.tsx render tree. Each one threads 30+
+state values and handlers through, so a clean split needs careful
+prop design.
+
+**Plan:**
+- `pages/dashboard/BoardsTab.tsx` (~165 lines lifted)
+- `pages/dashboard/ActionsTab.tsx` (~280 lines lifted)
+- `pages/dashboard/TeamsTab.tsx` (~780 lines lifted) — also pulls in
+  `useTeamPageFilters` reducer to collapse the 8-setter cluster on
+  the team-tab `onSelect`.
+- `pages/dashboard/Dashboard.tsx` (~250 lines: layout, tab routing,
+  modal dispatch).
 
 **Acceptance:**
 - `Dashboard.tsx` < 400 lines.
-- All four lifted helpers live in their own files.
+- Each tab is self-contained — its props are an enumerated set of
+  data + callbacks, not the whole world.
+- BoardsTab and TeamsTab have smoke + behavioural tests.
+- `useTeamPageFilters` reducer has unit tests covering each
+  transition.
 
 ---
 
