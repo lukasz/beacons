@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useBoard } from '../hooks/useBoard';
+import { useVoteUI } from '../hooks/board/useVoteUI';
 import type { VoteSession } from '../types';
 
 function getWinnerLabel(vote: VoteSession, groups: Record<string, { label: string }>, postIts: Record<string, { text: string }>) {
@@ -116,17 +117,7 @@ export default function VotePanel() {
     return vote?.closed ? vote : null;
   }, [viewingHistoryId, voteHistory, vote]);
 
-  const myVoteCount = useMemo(() => {
-    if (!vote || vote.closed) return 0;
-    let count = 0;
-    for (const voters of Object.values(vote.votes)) {
-      for (const v of voters) {
-        if (v === userId) count++;
-      }
-    }
-    return count;
-  }, [vote, userId]);
-
+  const { myVoteCount } = useVoteUI(state, userId, viewingHistoryId, ranksVisible);
   const remaining = vote && !vote.closed ? vote.votesPerUser - myVoteCount : 0;
 
   const getResults = useCallback(
