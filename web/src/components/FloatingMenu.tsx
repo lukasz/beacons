@@ -9,6 +9,7 @@ interface Props {
   timerOpen: boolean;
   onToggleTimer: () => void;
   hasVoteActivity: boolean;
+  onToggleVotePanel: () => void;
   stickyColorIdx: number;
   onStickyColorChange: (idx: number) => void;
   sectionColorIdx: number;
@@ -24,6 +25,7 @@ interface Props {
 
 export default function FloatingMenu({
   activeMode, onModeChange, timerOpen, onToggleTimer, hasVoteActivity,
+  onToggleVotePanel,
   stickyColorIdx, onStickyColorChange, sectionColorIdx, onSectionColorChange,
   templateMode, onGiphyOpen,
   hideMode, onToggleHide, isFacilitator, allHidden, onToggleHideAll,
@@ -130,7 +132,7 @@ export default function FloatingMenu({
 
           <button
             className={`floating-menu-btn ${hasVoteActivity ? 'active' : ''}`}
-            onClick={() => window.dispatchEvent(new CustomEvent('toggle-vote-panel'))}
+            onClick={onToggleVotePanel}
             title="Voting"
           >
             <span className="floating-menu-icon">⧉</span>

@@ -1,26 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useRemoteCursors } from './useRemoteCursors';
+import { handlerRegistry, type CursorMoveData } from '../../state/handlerRegistry';
 
 let send: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  // jsdom doesn't ship a fake rAF; route to setTimeout so we can step it.
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
     return setTimeout(() => cb(0), 16) as unknown as number;
   });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
   send = vi.fn();
+  handlerRegistry.reset();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  handlerRegistry.reset();
 });
 
-function getInbound() {
-  return (window as unknown as { __handleCursorMove?: (data: unknown) => void }).__handleCursorMove;
+function send_cursor(data: CursorMoveData) {
+  handlerRegistry.invokeCursor(data);
 }
 
 describe('useRemoteCursors', () => {
@@ -29,44 +31,46 @@ describe('useRemoteCursors', () => {
     expect(result.current.cursors).toEqual([]);
   });
 
-  it('registers and clears the global cursor handler', () => {
+  it('registers a handler with handlerRegistry on mount and clears it on unmount', () => {
     const { unmount } = renderHook(() => useRemoteCursors(send));
-    expect(getInbound()).toBeDefined();
+    // Invoking should reach the hook (we'll observe the rAF flush below).
+    const before = vi.fn();
+    handlerRegistry.setCursorHandler(before);
+    // Re-mount: the hook's effect overrides our test handler.
+    const { unmount: unmount2 } = renderHook(() => useRemoteCursors(send));
+    handlerRegistry.invokeCursor({ userId: 'u', name: 'n', x: 0, y: 0 });
+    expect(before).not.toHaveBeenCalled();
     unmount();
-    expect(getInbound()).toBeUndefined();
+    unmount2();
   });
 
   it('publishes incoming cursors after a rAF tick', () => {
     const { result } = renderHook(() => useRemoteCursors(send));
     act(() => {
-      getInbound()!({ userId: 'u2', name: 'Ben', x: 10, y: 20 });
+      send_cursor({ userId: 'u2', name: 'Ben', x: 10, y: 20 });
       vi.advanceTimersByTime(20);
     });
     expect(result.current.cursors).toHaveLength(1);
     expect(result.current.cursors[0]).toMatchObject({ userId: 'u2', x: 10, y: 20 });
   });
 
-  it('drops cursors we haven\'t heard from in over 5 seconds', () => {
+  it("drops cursors we haven't heard from in over 5 seconds", () => {
     const { result } = renderHook(() => useRemoteCursors(send));
     act(() => {
-      getInbound()!({ userId: 'u2', name: 'Ben', x: 0, y: 0 });
+      send_cursor({ userId: 'u2', name: 'Ben', x: 0, y: 0 });
       vi.advanceTimersByTime(20);
     });
     expect(result.current.cursors).toHaveLength(1);
-    // Advance past STALE_MS (5s) and let the SWEEP_MS (3s) interval run.
     act(() => { vi.advanceTimersByTime(8_000); });
     expect(result.current.cursors).toHaveLength(0);
   });
 
   it('throttles outbound cursor_move to ~50ms', () => {
     const { result } = renderHook(() => useRemoteCursors(send));
-    // First call goes out (lastSendAt = 0; Date.now() - 0 > 50).
     act(() => result.current.trackLocal(1, 2));
-    // A second call within the window is dropped.
     act(() => result.current.trackLocal(3, 4));
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith('cursor_move', { x: 1, y: 2 });
-    // After the window elapses, the next call goes through.
     vi.advanceTimersByTime(60);
     act(() => result.current.trackLocal(5, 6));
     expect(send).toHaveBeenCalledTimes(2);

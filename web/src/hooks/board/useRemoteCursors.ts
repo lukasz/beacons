@@ -3,16 +3,16 @@
  *
  * Owns:
  *   - the throttled outbound `send('cursor_move', ...)` (one per ~50ms),
- *   - the inbound cursor map updated by the WS handler, batched into
- *     React state via requestAnimationFrame to avoid re-render storms,
+ *   - the inbound cursor map updated by the registered handler, batched
+ *     into React state via requestAnimationFrame to avoid re-render storms,
  *   - a 3-second sweep that drops cursors we haven't heard from in 5s.
  *
- * The inbound handler is registered on `window.__handleCursorMove` —
- * `App.tsx` looks it up and forwards `cursor_move` messages to it. In
- * Phase 4 this becomes a context-registered callback; for now we keep
- * the existing dispatch to minimise the diff.
+ * The inbound handler is registered with `handlerRegistry` so App.tsx
+ * can dispatch `cursor_move` messages to it without crossing the
+ * BoardUiProvider tree.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { handlerRegistry } from '../../state/handlerRegistry';
 
 export interface RemoteCursor {
   userId: string;
@@ -46,18 +46,17 @@ export function useRemoteCursors(send: Send): RemoteCursorsApi {
   const lastSendAt = useRef(0);
   const rafId = useRef(0);
 
-  // Inbound cursor handler — installed on `window.__handleCursorMove`
-  // so the App-level WS dispatch can forward messages to us.
+  // Inbound cursor handler is registered via handlerRegistry so App's
+  // WS dispatcher can find it without reaching across the React tree.
   useEffect(() => {
-    const handler = (data: unknown) => {
-      const d = data as CursorMessage;
-      cursorMap.current.set(d.userId, { ...d, ts: Date.now() });
+    const handler = (data: CursorMessage) => {
+      cursorMap.current.set(data.userId, { ...data, ts: Date.now() });
       cancelAnimationFrame(rafId.current);
       rafId.current = requestAnimationFrame(() => {
         setCursors(Array.from(cursorMap.current.values()));
       });
     };
-    (window as unknown as Record<string, unknown>).__handleCursorMove = handler;
+    handlerRegistry.setCursorHandler(handler);
 
     // Sweep stale cursors every SWEEP_MS.
     const interval = setInterval(() => {
@@ -73,7 +72,7 @@ export function useRemoteCursors(send: Send): RemoteCursorsApi {
     }, SWEEP_MS);
 
     return () => {
-      delete (window as unknown as Record<string, unknown>).__handleCursorMove;
+      handlerRegistry.setCursorHandler(null);
       clearInterval(interval);
       cancelAnimationFrame(rafId.current);
     };

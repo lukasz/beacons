@@ -49,6 +49,8 @@ interface UseRadialMenuItemsOptions {
    * board.
    */
   onExportMarkdown: (ids?: Set<string>) => void;
+  /** Open / toggle the vote panel (replaces the old dispatchEvent). */
+  toggleVotePanel: () => void;
 }
 
 const DELETE_MSG: Record<string, string> = {
@@ -71,6 +73,7 @@ export function useRadialMenuItems(opts: UseRadialMenuItemsOptions): RadialMenuI
     ctxPostItColor, ctxSectionColor, votingActive,
     screenToCanvas, hasClipboard,
     send, copyItems, pasteItems, clearSelection, onExportMarkdown,
+    toggleVotePanel,
   } = opts;
 
   return useMemo<RadialMenuItem[]>(() => {
@@ -211,7 +214,7 @@ export function useRadialMenuItems(opts: UseRadialMenuItemsOptions): RadialMenuI
       icon: votingActive ? '🏁' : '🗳️',
       action: () => {
         if (votingActive) send('vote_close', {});
-        else window.dispatchEvent(new CustomEvent('toggle-vote-panel'));
+        else toggleVotePanel();
       },
     });
     return items;
@@ -220,6 +223,6 @@ export function useRadialMenuItems(opts: UseRadialMenuItemsOptions): RadialMenuI
     ctxPostItColor, ctxSectionColor,
     state.sections, state.postIts, state.users,
     selection, copyItems, pasteItems, hasClipboard,
-    clearSelection, onExportMarkdown,
+    clearSelection, onExportMarkdown, toggleVotePanel,
   ]);
 }

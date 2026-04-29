@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useBoard } from '../hooks/useBoard';
 import { useVoteUI } from '../hooks/board/useVoteUI';
+import { useBoardUi } from '../state/BoardUiContext';
 import type { VoteSession } from '../types';
 
 function getWinnerLabel(vote: VoteSession, groups: Record<string, { label: string }>, postIts: Record<string, { text: string }>) {
@@ -49,18 +50,16 @@ function NumberStepper({ value, min = 1, max = 20, onChange }: NumberStepperProp
 export default function VotePanel() {
   const { state, send, userId } = useBoard();
   const { vote, voteHistory } = state;
-  const [open, _setOpen] = useState(false);
-  const setOpen = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
-    _setOpen((prev) => {
-      const next = typeof v === 'function' ? v(prev) : v;
-      window.dispatchEvent(new CustomEvent('vote-panel-visibility', { detail: next }));
-      return next;
-    });
-  }, []);
+  const {
+    votePanelOpen: open,
+    setVotePanelOpen: setOpen,
+    viewingHistoryId,
+    setViewingHistoryId,
+    ranksVisible,
+    setRanksVisible,
+  } = useBoardUi();
   const [showVoteConfig, setShowVoteConfig] = useState(false);
   const [votesPerUser, setVotesPerUser] = useState(3);
-  const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
-  const [ranksVisible, setRanksVisible] = useState(true);
   const [allCastModal, setAllCastModal] = useState(false);
   const [takeTimeTip, setTakeTimeTip] = useState(false);
   const [everyoneDoneModal, setEveryoneDoneModal] = useState(false);
@@ -100,12 +99,7 @@ export default function VotePanel() {
     if (vote?.closed) setOpen(true);
   }, [vote?.closed]);
 
-  // Toggle from toolbar
-  useEffect(() => {
-    const handler = () => setOpen((o) => !o);
-    window.addEventListener('toggle-vote-panel', handler);
-    return () => window.removeEventListener('toggle-vote-panel', handler);
-  }, []);
+  // Toolbar toggle now lives on BoardUiContext — nothing to subscribe to.
 
   const isOrganizer = vote?.organizerId === userId;
   const isDone = vote?.doneUsers[userId] || false;
@@ -143,14 +137,8 @@ export default function VotePanel() {
 
   const maxViewingVotes = viewingResults.length > 0 ? viewingResults[0].count : 1;
 
-  // Notify board of which vote to show rank badges for (and visibility)
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('vote-view-change', { detail: viewingHistoryId }));
-  }, [viewingHistoryId]);
-
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('vote-ranks-visibility', { detail: ranksVisible }));
-  }, [ranksVisible]);
+  // Rank-badge visibility + viewing-history selection live in BoardUiContext.
+  // Board reads them directly; no event-bus broadcast needed.
 
   // ── Prompts ──
   // When the current user has spent all their votes (and isn't already marked done),
