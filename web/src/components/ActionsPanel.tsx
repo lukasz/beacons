@@ -4,56 +4,12 @@ import {
   fetchTeams, fetchTeamMembers, createIssue,
   type LinearTeam, type LinearMember,
 } from '../linearClient';
-import { supabase } from '../supabaseClient';
 import { storage } from '../lib/storage';
+import { actions as actionsService, type PreviousAction } from '../services/actions';
 
-export interface PreviousAction {
-  id: string;
-  text: string;
-  authorName: string;
-  createdAt: number;
-  linearUrl?: string;
-  linearKey?: string;
-  sourceBoardId: string;
-  sourceSessionName: string;
-}
-
-export async function fetchPreviousActions(teamId: string, excludeBoardId: string): Promise<PreviousAction[]> {
-  const { data, error } = await supabase
-    .from('boards')
-    .select('id, state->actions, state->sessionName')
-    .eq('team_id', teamId)
-    .neq('id', excludeBoardId)
-    .is('is_template', false)
-    .order('updated_at', { ascending: false })
-    .limit(10);
-
-  if (error || !data) return [];
-
-  const results: PreviousAction[] = [];
-  for (const row of data) {
-    const actions = (row.actions || {}) as Record<string, {
-      id: string; text: string; done: boolean; authorName: string;
-      createdAt: number; linearUrl?: string; linearKey?: string;
-    }>;
-    for (const a of Object.values(actions)) {
-      if (!a.done) {
-        results.push({
-          id: a.id,
-          text: a.text,
-          authorName: a.authorName,
-          createdAt: a.createdAt,
-          linearUrl: a.linearUrl,
-          linearKey: a.linearKey,
-          sourceBoardId: row.id as string,
-          sourceSessionName: (row.sessionName as string) || 'Untitled',
-        });
-      }
-    }
-  }
-  results.sort((a, b) => b.createdAt - a.createdAt);
-  return results;
-}
+// Re-export so any existing imports of `PreviousAction` from this file
+// keep compiling. New callers should import from `services/actions`.
+export type { PreviousAction } from '../services/actions';
 
 const LINEAR_SVG = (size: number) => (
   <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
@@ -96,7 +52,7 @@ export default function ActionsPanel() {
   useEffect(() => {
     if (!state.teamId || !state.id) return;
     setLoadingPrevious(true);
-    fetchPreviousActions(state.teamId, state.id)
+    actionsService.previousForTeam(state.teamId, state.id)
       .then(setPreviousActions)
       .catch(() => {})
       .finally(() => setLoadingPrevious(false));
@@ -158,18 +114,8 @@ export default function ActionsPanel() {
   const handlePreviousDone = useCallback(async (prev: PreviousAction) => {
     // Optimistically update UI
     setDoneIds((ids) => new Set(ids).add(prev.id));
-    // Update source board's action in Supabase
     try {
-      const { data } = await supabase
-        .from('boards')
-        .select('state')
-        .eq('id', prev.sourceBoardId)
-        .single();
-      if (data?.state?.actions?.[prev.id]) {
-        const updatedState = { ...data.state };
-        updatedState.actions = { ...updatedState.actions, [prev.id]: { ...updatedState.actions[prev.id], done: true } };
-        await supabase.from('boards').update({ state: updatedState }).eq('id', prev.sourceBoardId);
-      }
+      await actionsService.markDoneOnSourceBoard(prev.sourceBoardId, prev.id);
     } catch {
       // Revert on failure
       setDoneIds((ids) => { const n = new Set(ids); n.delete(prev.id); return n; });

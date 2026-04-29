@@ -7,6 +7,7 @@ import {
 } from '../linearClient';
 import { COLORS } from '../types';
 import { storage } from '../lib/storage';
+import { linear } from '../services/linear';
 
 interface TemplateOption {
   id: string;
@@ -164,7 +165,7 @@ export default function LinearSync({ onClose, onCreateBoard, templates, defaultT
   const [showApiKeyFallback, setShowApiKeyFallback] = useState(false);
 
   useEffect(() => {
-    fetch('/api/linear/status').then((r) => r.json()).then((d) => setOauthEnabled(d.oauthEnabled)).catch(() => setOauthEnabled(false));
+    linear.status().then((d) => setOauthEnabled(d.oauthEnabled));
   }, []);
 
   const [teams, setTeams] = useState<LinearTeam[]>([]);
