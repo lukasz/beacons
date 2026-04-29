@@ -1,7 +1,11 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import type { VoteSession } from '../types';
 import { COLORS } from '../types';
 import { useBoard } from '../hooks/useBoard';
+import { useVoteUI } from '../hooks/board/useVoteUI';
+import { useClipboard, type SelectedItem } from '../hooks/board/useClipboard';
+import { useRemoteCursors } from '../hooks/board/useRemoteCursors';
+import { usePanZoom } from '../hooks/board/usePanZoom';
+import { useBoardKeyboard } from '../hooks/board/useBoardKeyboard';
 import Toolbar from './Toolbar';
 import SectionComponent from './Section';
 import PostItComponent from './PostIt';
@@ -26,13 +30,6 @@ import { storage } from '../lib/storage';
 import { hashCode } from '../lib/hash';
 import { buildMarkdown } from '../lib/buildMarkdown';
 
-interface RemoteCursor { userId: string; name: string; x: number; y: number; ts: number }
-
-const MIN_ZOOM = 0.15;
-const MAX_ZOOM = 3;
-const ZOOM_SENSITIVITY = 0.002; // for scroll wheel
-const PINCH_SENSITIVITY = 0.008; // for trackpad pinch
-
 export default function Board() {
   const { state, send, userId, templateMode } = useBoard();
 
@@ -43,32 +40,11 @@ export default function Board() {
   );
   const groups = useMemo(() => Object.values(state.groups), [state.groups]);
 
-  const vote = state.vote;
-  const votingActive = !!vote && !vote.closed;
-  const canVote = votingActive && !vote.doneUsers[userId];
-
-  const myVoteCount = useMemo(() => {
-    if (!vote) return 0;
-    let count = 0;
-    for (const voters of Object.values(vote.votes)) {
-      for (const v of voters) {
-        if (v === userId) count++;
-      }
-    }
-    return count;
-  }, [vote, userId]);
-
-  const hasRemainingVotes = vote ? myVoteCount < vote.votesPerUser : false;
-
-  // Get the effective vote target: if post-it is in a group, vote on the group
-  const getVoteTarget = useCallback(
-    (postItId: string) => {
-      const p = state.postIts[postItId];
-      if (p?.groupId) return p.groupId;
-      return postItId;
-    },
-    [state.postIts],
-  );
+  const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
+  const [ranksVisible, setRanksVisible] = useState(true);
+  const voteUI = useVoteUI(state, userId, viewingHistoryId, ranksVisible);
+  const { vote, votingActive, canVote, hasRemainingVotes, rankMap, getVoteTarget,
+    getVoteCount, getEffectiveVoteCount, getEffectiveRank } = voteUI;
 
   const handleVote = useCallback(
     (targetId: string) => {
@@ -90,194 +66,34 @@ export default function Board() {
 
   const handleGroupVote = useCallback(
     (groupId: string) => {
-      if (canVote && hasRemainingVotes) {
-        send('vote_cast', { targetId: groupId });
-      }
+      if (canVote && hasRemainingVotes) send('vote_cast', { targetId: groupId });
     },
     [canVote, hasRemainingVotes, send],
   );
 
   const handleGroupUnvote = useCallback(
     (groupId: string) => {
-      if (canVote) {
-        send('vote_uncast', { targetId: groupId });
-      }
+      if (canVote) send('vote_uncast', { targetId: groupId });
     },
     [canVote, send],
   );
 
-  const getVoteCount = useCallback(
-    (targetId: string) => {
-      if (!vote) return 0;
-      const voters = vote.votes[targetId];
-      if (!voters) return 0;
-      // During active voting, each user only sees their OWN votes per target.
-      // The aggregate tally is revealed only after the vote is closed.
-      if (!vote.closed) {
-        let own = 0;
-        for (const v of voters) if (v === userId) own++;
-        return own;
-      }
-      return voters.length;
-    },
-    [vote, userId],
-  );
-
-  // For post-its in groups, get the group's vote count
-  const getEffectiveVoteCount = useCallback(
-    (postItId: string) => {
-      const p = state.postIts[postItId];
-      if (p?.groupId) return getVoteCount(p.groupId);
-      return getVoteCount(postItId);
-    },
-    [state.postIts, getVoteCount],
-  );
-
   // ── Copy / Paste ──
-  type ClipItemWithOffset = ClipItem & { dx: number; dy: number };
-  type ClipboardDataFull = { items: ClipItemWithOffset[] };
+  const { copyItems, pasteItems, hasItems: clipboardHasItems } = useClipboard(state, send, userId);
 
-  const copyItems = useCallback(
-    (items: SelectedItem[]) => {
-      if (items.length === 0) return;
-      // Collect positions to compute anchor (top-left of bounding box)
-      let minX = Infinity;
-      let minY = Infinity;
-      const raw: { item: SelectedItem; x: number; y: number }[] = [];
-      for (const item of items) {
-        if (item.type === 'postit') {
-          const p = state.postIts[item.id];
-          if (!p) continue;
-          raw.push({ item, x: p.x, y: p.y });
-          if (p.x < minX) minX = p.x;
-          if (p.y < minY) minY = p.y;
-        } else if (item.type === 'group') {
-          const g = state.groups[item.id];
-          if (!g) continue;
-          raw.push({ item, x: g.x, y: g.y });
-          if (g.x < minX) minX = g.x;
-          if (g.y < minY) minY = g.y;
-        } else if (item.type === 'section') {
-          const s = state.sections[item.id];
-          if (!s) continue;
-          raw.push({ item, x: s.x, y: s.y });
-          if (s.x < minX) minX = s.x;
-          if (s.y < minY) minY = s.y;
-        }
-      }
-      const clipItems: ClipItemWithOffset[] = [];
-      for (const { item, x, y } of raw) {
-        const dx = x - minX;
-        const dy = y - minY;
-        if (item.type === 'postit') {
-          const p = state.postIts[item.id]!;
-          clipItems.push({ type: 'postit', data: { text: p.text, colorIdx: p.colorIdx ?? 0, sectionId: p.sectionId, groupId: p.groupId }, dx, dy });
-        } else if (item.type === 'group') {
-          const g = state.groups[item.id]!;
-          clipItems.push({ type: 'group', data: { label: g.label, w: g.w, h: g.h }, dx, dy });
-        } else if (item.type === 'section') {
-          const s = state.sections[item.id]!;
-          clipItems.push({ type: 'section', data: { title: s.title, colorIdx: s.colorIdx, w: s.w, h: s.h }, dx, dy });
-        }
-      }
-      if (clipItems.length > 0) {
-        (clipboardRef as React.MutableRefObject<ClipboardDataFull | null>).current = { items: clipItems };
-      }
-    },
-    [state.postIts, state.groups, state.sections],
-  );
-
-  const pasteItems = useCallback(
-    (canvasX: number, canvasY: number) => {
-      const clip = clipboardRef.current as ClipboardDataFull | null;
-      if (!clip || clip.items.length === 0) return;
-      for (const item of clip.items) {
-        const px = canvasX + item.dx;
-        const py = canvasY + item.dy;
-        if (item.type === 'postit') {
-          send('add_postit', {
-            sectionId: '',
-            authorId: userId,
-            text: item.data.text,
-            x: px,
-            y: py,
-            colorIdx: item.data.colorIdx,
-          });
-        } else if (item.type === 'group') {
-          send('add_group', {
-            label: item.data.label,
-            x: px,
-            y: py,
-            w: item.data.w,
-            h: item.data.h,
-          });
-        } else if (item.type === 'section') {
-          send('add_section', {
-            title: item.data.title,
-            colorIdx: item.data.colorIdx,
-            x: px,
-            y: py,
-            w: item.data.w,
-            h: item.data.h,
-          });
-        }
-      }
-    },
-    [send, userId],
-  );
-
-  // Track which historical vote the sidebar is viewing
-  const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
-  const [ranksVisible, setRanksVisible] = useState(true);
-
+  // Vote-history sidebar selection. Stays here in Phase 3; will move to
+  // BoardUiContext in Phase 4 along with the rest of the event-bus state.
   useEffect(() => {
-    const handler = (e: Event) => {
-      setViewingHistoryId((e as CustomEvent).detail);
-    };
+    const handler = (e: Event) => setViewingHistoryId((e as CustomEvent).detail);
     window.addEventListener('vote-view-change', handler);
     return () => window.removeEventListener('vote-view-change', handler);
   }, []);
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      setRanksVisible((e as CustomEvent).detail);
-    };
+    const handler = (e: Event) => setRanksVisible((e as CustomEvent).detail);
     window.addEventListener('vote-ranks-visibility', handler);
     return () => window.removeEventListener('vote-ranks-visibility', handler);
   }, []);
-
-  // The vote to derive rank badges from
-  const rankVote = useMemo((): VoteSession | null => {
-    if (viewingHistoryId) {
-      return (state.voteHistory || []).find((v) => v.id === viewingHistoryId) || null;
-    }
-    return vote?.closed ? vote : null;
-  }, [viewingHistoryId, state.voteHistory, vote]);
-
-  // Ranking map: targetId → rank (1-based) when viewing a closed vote
-  const rankMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    if (!rankVote || !ranksVisible) return map;
-    const items: { id: string; count: number }[] = [];
-    for (const [targetId, voters] of Object.entries(rankVote.votes)) {
-      if (voters.length > 0) items.push({ id: targetId, count: voters.length });
-    }
-    items.sort((a, b) => b.count - a.count);
-    for (let i = 0; i < items.length; i++) {
-      map[items[i].id] = i + 1;
-    }
-    return map;
-  }, [rankVote, ranksVisible]);
-
-  // Get rank for a post-it (follows group if grouped)
-  const getEffectiveRank = useCallback(
-    (postItId: string) => {
-      const p = state.postIts[postItId];
-      if (p?.groupId) return rankMap[p.groupId] || 0;
-      return rankMap[postItId] || 0;
-    },
-    [state.postIts, rankMap],
-  );
 
   const getSectionColorIdx = useCallback(
     (sectionId: string) => {
@@ -287,108 +103,15 @@ export default function Board() {
   );
 
   // ── Pan & Zoom ──
-  const boardRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const transform = useRef({ x: 0, y: 0, z: 1 });
-  const [zoomDisplay, setZoomDisplay] = useState(100);
-  const panRef = useRef<{ pointerId: number; startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const isPanning = useRef(false);
-  const spaceDown = useRef(false);
+  const {
+    boardRef, canvasRef, transform, panRef, isPanning, spaceDown,
+    zoomDisplay, applyTransform, zoomTo, screenToCanvas, getViewportCenter,
+    resetTransform,
+  } = usePanZoom();
 
   // ── Remote Cursors ──
   const [cursorsEnabled, setCursorsEnabled] = useState(() => storage.read('cursors') !== 'off');
-  const remoteCursorsRef = useRef<Map<string, RemoteCursor>>(new Map());
-  const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
-  const cursorThrottleRef = useRef(0);
-  const cursorRafRef = useRef(0);
-
-  const applyTransform = useCallback(() => {
-    const el = canvasRef.current;
-    if (!el) return;
-    const { x, y, z } = transform.current;
-    el.style.transform = `translate(${x}px, ${y}px) scale(${z})`;
-  }, []);
-
-  const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
-
-  const zoomTo = useCallback(
-    (newZoom: number, pivotX: number, pivotY: number) => {
-      const t = transform.current;
-      const oldZoom = t.z;
-      newZoom = clampZoom(newZoom);
-      if (newZoom === oldZoom) return;
-      const scale = newZoom / oldZoom;
-      t.x = pivotX - (pivotX - t.x) * scale;
-      t.y = pivotY - (pivotY - t.y) * scale;
-      t.z = newZoom;
-      zoomRef.current = newZoom;
-      applyTransform();
-      setZoomDisplay(Math.round(newZoom * 100));
-    },
-    [applyTransform],
-  );
-
-  const getViewportCenter = useCallback(() => {
-    const board = boardRef.current;
-    if (!board) return { x: 0, y: 0 };
-    const rect = board.getBoundingClientRect();
-    return { x: rect.width / 2, y: rect.height / 2 };
-  }, []);
-
-  // Space key for panning
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-        spaceDown.current = true;
-        if (boardRef.current) boardRef.current.style.cursor = 'grab';
-      }
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        spaceDown.current = false;
-        if (boardRef.current && !isPanning.current) boardRef.current.style.cursor = '';
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
-
-  // Attach wheel handler as non-passive
-  useEffect(() => {
-    const board = boardRef.current;
-    if (!board) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const t = transform.current;
-      const rect = board.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      if (e.ctrlKey) {
-        // Pinch-to-zoom (trackpad) — use finer sensitivity
-        const factor = 1 - e.deltaY * PINCH_SENSITIVITY;
-        const newZoom = clampZoom(t.z * factor);
-        zoomTo(newZoom, mouseX, mouseY);
-      } else if (e.deltaX !== 0 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        // Horizontal scroll (trackpad two-finger swipe) — pan horizontally
-        t.x -= e.deltaX;
-        applyTransform();
-      } else {
-        // Regular scroll — zoom centered on mouse
-        const factor = 1 - e.deltaY * ZOOM_SENSITIVITY;
-        const newZoom = clampZoom(t.z * factor);
-        zoomTo(newZoom, mouseX, mouseY);
-      }
-    };
-
-    board.addEventListener('wheel', handleWheel, { passive: false });
-    return () => board.removeEventListener('wheel', handleWheel);
-  }, [zoomTo, applyTransform]);
+  const { cursors: remoteCursors, trackLocal: trackLocalCursor } = useRemoteCursors(send);
 
   // ── Creation Mode ──
   const [creationMode, setCreationMode] = useState<CreationMode>(null);
@@ -435,53 +158,13 @@ export default function Board() {
     return () => window.removeEventListener('cursors-toggle', handler);
   }, []);
 
-  // ── Remote cursor handler ──
-  useEffect(() => {
-    const handler = (data: unknown) => {
-      const d = data as { userId: string; name: string; x: number; y: number };
-      remoteCursorsRef.current.set(d.userId, { ...d, ts: Date.now() });
-      cancelAnimationFrame(cursorRafRef.current);
-      cursorRafRef.current = requestAnimationFrame(() => {
-        setRemoteCursors(Array.from(remoteCursorsRef.current.values()));
-      });
-    };
-    (window as unknown as Record<string, unknown>).__handleCursorMove = handler;
-
-    // Clean up stale cursors every 3s
-    const interval = setInterval(() => {
-      const now = Date.now();
-      let changed = false;
-      for (const [id, c] of remoteCursorsRef.current) {
-        if (now - c.ts > 5000) {
-          remoteCursorsRef.current.delete(id);
-          changed = true;
-        }
-      }
-      if (changed) setRemoteCursors(Array.from(remoteCursorsRef.current.values()));
-    }, 3000);
-
-    return () => {
-      delete (window as unknown as Record<string, unknown>).__handleCursorMove;
-      clearInterval(interval);
-      cancelAnimationFrame(cursorRafRef.current);
-    };
-  }, []);
-
   // Ghost preview position for creation mode
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
 
   // ── Selection state ──
-  type SelectedItem = { type: 'postit' | 'group' | 'section' | 'image'; id: string };
   const [selection, setSelection] = useState<SelectedItem[]>([]);
 
-  // ── Clipboard ──
-  type ClipItem =
-    | { type: 'postit'; data: { text: string; colorIdx: number; sectionId: string; groupId?: string } }
-    | { type: 'group'; data: { label: string; w: number; h: number } }
-    | { type: 'section'; data: { title: string; colorIdx: number; w: number; h: number } };
-
-  type ClipboardData = { items: ClipItem[]; anchorX: number; anchorY: number };
-  const clipboardRef = useRef<ClipboardData | null>(null);
+  // ── Marquee / drag state ──
   const [marquee, setMarquee] = useState<{ sx: number; sy: number; ex: number; ey: number } | null>(null);
   const marqueeRef = useRef<{ boardX: number; boardY: number; screenStartX: number; screenStartY: number } | null>(null);
   const [grabMode, setGrabMode] = useState(false);
@@ -494,115 +177,60 @@ export default function Board() {
   // Image resize state
   const imgResizeRef = useRef<{ id: string; startX: number; startY: number; origW: number; origH: number; origX: number; origY: number; corner: string } | null>(null);
 
-  // Convert screen position to canvas position
-  const screenToCanvas = useCallback(
-    (screenX: number, screenY: number) => {
-      const board = boardRef.current;
-      if (!board) return { x: 0, y: 0 };
-      const rect = board.getBoundingClientRect();
-      const t = transform.current;
-      return {
-        x: (screenX - rect.left - t.x) / t.z,
-        y: (screenY - rect.top - t.y) / t.z,
-      };
-    },
-    [],
-  );
-
-  // Cancel creation mode / selection / grab mode on Escape
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (creationMode) {
-          setCreationMode(null);
-          setGhostPos(null);
-        } else if (grabMode) {
-          setGrabMode(false);
-          if (boardRef.current) boardRef.current.style.cursor = '';
-        } else if (selection.length > 0) {
-          setSelection([]);
-        }
-      }
-      // Delete selected items
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selection.length > 0 && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-        for (const item of selection) {
-          const deleteMap: Record<string, string> = { postit: 'delete_postit', group: 'delete_group', section: 'delete_section', image: 'delete_image' };
-          send(deleteMap[item.type], { id: item.id });
-        }
+  // ── Keyboard + system paste subscriptions ──
+  useBoardKeyboard({
+    hasSelection: selection.length > 0,
+    onEscape: () => {
+      if (creationMode) {
+        setCreationMode(null);
+        setGhostPos(null);
+      } else if (grabMode) {
+        setGrabMode(false);
+        if (boardRef.current) boardRef.current.style.cursor = '';
+      } else if (selection.length > 0) {
         setSelection([]);
       }
-      // Copy selected items
-      if ((e.key === 'c' || e.key === 'C') && (e.metaKey || e.ctrlKey) && selection.length > 0 && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-        copyItems(selection);
-      }
-      // Paste items — place at center of visible viewport
-      // NOTE: don't preventDefault here — let the native 'paste' event fire first
-      // so the paste-image-URL handler can inspect clipboardData. We handle internal
-      // paste inside the 'paste' event listener instead.
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [creationMode, grabMode, selection, send, copyItems, pasteItems, screenToCanvas]);
-
-  // Paste handler — image URLs from system clipboard, or internal board items
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const text = e.clipboardData?.getData('text/plain')?.trim() || '';
-
-      // Check if it's an image URL
-      const isImageUrl = /^https?:\/\/.+\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?.*)?$/i.test(text)
-        || (/^https?:\/\/.+/i.test(text) && /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(text));
-
+    },
+    onDelete: () => {
+      const deleteMap: Record<string, string> = {
+        postit: 'delete_postit',
+        group: 'delete_group',
+        section: 'delete_section',
+        image: 'delete_image',
+      };
+      for (const item of selection) send(deleteMap[item.type], { id: item.id });
+      setSelection([]);
+    },
+    onCopy: () => copyItems(selection),
+    onPasteImageUrl: (url: string) => {
       const board = boardRef.current;
       if (!board) return;
       const rect = board.getBoundingClientRect();
       const center = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
-
-      if (isImageUrl) {
-        e.preventDefault();
-        // Load the image to get natural dimensions, then compute constrained size
-        const img = new Image();
-        img.onload = () => {
-          const natW = img.naturalWidth;
-          const natH = img.naturalHeight;
-          // 15% of visible board area in canvas coords
-          const maxW = (rect.width / (transform.current.z || 1)) * 0.15;
-          const maxH = (rect.height / (transform.current.z || 1)) * 0.15;
-          // Scale so longer edge fits
-          const scale = Math.min(maxW / natW, maxH / natH, 1);
-          const w = Math.round(natW * scale);
-          const h = Math.round(natH * scale);
-          send('add_image', {
-            url: text,
-            x: center.x - w / 2,
-            y: center.y - h / 2,
-            w,
-            h,
-          });
-        };
-        img.onerror = () => {
-          // If image fails to load, place with default size
-          send('add_image', {
-            url: text,
-            x: center.x - 100,
-            y: center.y - 75,
-            w: 200,
-            h: 150,
-          });
-        };
-        img.src = text;
-      } else if (clipboardRef.current) {
-        // Internal board paste (copied stickies/groups/sections)
-        e.preventDefault();
-        pasteItems(center.x, center.y);
-      }
-    };
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [send, screenToCanvas, pasteItems]);
+      const img = new Image();
+      img.onload = () => {
+        // 15% of visible board area in canvas coords; scale longest edge.
+        const maxW = (rect.width / (transform.current.z || 1)) * 0.15;
+        const maxH = (rect.height / (transform.current.z || 1)) * 0.15;
+        const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        send('add_image', { url, x: center.x - w / 2, y: center.y - h / 2, w, h });
+      };
+      img.onerror = () => {
+        send('add_image', { url, x: center.x - 100, y: center.y - 75, w: 200, h: 150 });
+      };
+      img.src = url;
+    },
+    onPasteInternal: () => {
+      const board = boardRef.current;
+      if (!board) return;
+      const rect = board.getBoundingClientRect();
+      const center = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      pasteItems(center.x, center.y);
+    },
+    hasClipboard: clipboardHasItems,
+  });
 
   // Place an item at canvas position based on current creation mode
   const placeItem = useCallback(
@@ -699,7 +327,7 @@ export default function Board() {
     const target = radialMenu?.target || null;
     const parentSectionId = radialMenu?.parentSectionId || null;
 
-    const hasClipboard = !!(clipboardRef.current as ClipboardDataFull | null)?.items?.length;
+    const hasClipboard = clipboardHasItems();
 
     const userName = state.users[userId]?.name || 'Unknown';
 
@@ -1029,15 +657,9 @@ export default function Board() {
 
   const handleBoardPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      // Always send cursor position to other users (throttled ~50ms)
-      {
-        const now = Date.now();
-        if (now - cursorThrottleRef.current > 50) {
-          cursorThrottleRef.current = now;
-          const pos = screenToCanvas(e.clientX, e.clientY);
-          send('cursor_move', { x: pos.x, y: pos.y });
-        }
-      }
+      // Always send cursor position to other users (throttled by the hook).
+      const cursorPos = screenToCanvas(e.clientX, e.clientY);
+      trackLocalCursor(cursorPos.x, cursorPos.y);
 
       // Update ghost position for creation mode preview
       if (creationMode && !isPanning.current) {
@@ -1256,13 +878,8 @@ export default function Board() {
   }, [zoomTo, getViewportCenter, smoothZoom]);
 
   const zoomReset = useCallback(() => {
-    smoothZoom(() => {
-      transform.current = { x: 0, y: 0, z: 1 };
-      zoomRef.current = 1;
-      applyTransform();
-      setZoomDisplay(100);
-    });
-  }, [applyTransform, smoothZoom]);
+    smoothZoom(resetTransform);
+  }, [resetTransform, smoothZoom]);
 
   // ── OCD Panic Button — organize everything into neat grids ──
   const organizeBoard = useCallback(() => {

@@ -124,29 +124,55 @@ components into the matching service. Components use `boards.list()`,
 
 ---
 
-## Phase 3 — Custom hooks (Board.tsx slim-down)
+## Phase 3 — Custom hooks (first wave)
 
 Slice `Board.tsx` into focused hooks. Each hook owns its refs, effects, and
 returns a stable handler shape.
 
-**Create:**
+**Created in Phase 3:**
 ```
 src/hooks/board/
-  usePanZoom.ts          # transform ref, zoomTo, screenToCanvas, wheel handler
-  useMarqueeSelection.ts # marqueeRef, selDragRef, selection, drag selection broadcast
-  useClipboard.ts        # copyItems, pasteItems, hasClipboard
-  useRemoteCursors.ts    # cursors state, send throttle, RAF batching
-  useBoardKeyboard.ts    # paste/escape/space subscriptions
-  useVoteUI.ts           # myVoteCount, hasRemainingVotes, rankMap, getEffectiveVoteCount, getEffectiveRank
-                         # (also imported by VotePanel — kills the duplicated derivation)
+  useVoteUI.ts          # myVoteCount, hasRemainingVotes, rankMap, getEffectiveVoteCount, getEffectiveRank
+                        # (also imported by VotePanel — kills the duplicated derivation)
+  useClipboard.ts       # copyItems, pasteItems, hasItems
+  useRemoteCursors.ts   # cursors state, send throttle, RAF batching, stale sweep
+  usePanZoom.ts         # transform ref, zoomTo, screenToCanvas, wheel + space-key
+  useBoardKeyboard.ts   # escape/delete/copy + native paste (image URL or internal)
 ```
 
-Each hook has its own test file with mocked refs + simulated events.
+Each hook has its own test file (`*.test.ts`) with stubbed refs + simulated
+events.
+
+**Acceptance (Phase 3):**
+- `VotePanel.tsx` and `Board.tsx` both consume `useVoteUI` — no duplicated
+  `myVoteCount`/`rankMap`.
+- Each new hook's public surface is unit-tested against state transitions
+  and edge cases (zoom clamp, drag threshold, paste-with-empty-clipboard…).
+- Total test count strictly increased.
+
+`Board.tsx` is **still ~1450 lines** after Phase 3. Hitting the < 400-line
+target requires splitting the pointer-handler tree and the render tree —
+both are large enough to warrant their own PR.
+
+## Phase 3.5 — Pointer handlers + render-tree split
+
+Pointer logic in `Board.tsx` (handleBoardPointerDown / Move / Up plus the
+image-resize and selection-drag refs) is ~400 lines that all read shared
+board state. The render tree is ~600 lines of JSX.
+
+**Plan:**
+- `useMarqueeSelection.ts` — marqueeRef + on-up hit-testing.
+- `useSelectionDrag.ts` — selDragRef + drag-broadcast-with-threshold.
+- `useImageResize.ts` — imgResizeRef + per-corner geometry.
+- `<BoardCanvas>` sub-component for the render tree (post-its, sections,
+  groups, images, cursors, marquee rect, selection outlines, ghost).
 
 **Acceptance:**
-- `Board.tsx` < 400 lines.
-- `VotePanel.tsx` and `Board.tsx` both consume `useVoteUI` (no duplicated `myVoteCount`/`rankMap`).
-- Hook tests cover state transitions and edge cases (zoom clamp, drag threshold, copy with no selection, paste with no clipboard).
+- `Board.tsx` < 400 lines (composition + top-level handlers only).
+- `BoardCanvas.tsx` is a pure render component receiving props.
+- All five new hooks have unit tests.
+- No regressions in vote/drag/marquee behaviour (covered by existing
+  component smoke tests + new hook tests).
 
 ---
 
