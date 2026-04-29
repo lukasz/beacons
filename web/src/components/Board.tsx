@@ -20,7 +20,7 @@ import BeatGoal from './BeatGoal';
 import HiddenBanner from './HiddenBanner';
 import CycleStatsPanel from './CycleStatsPanel';
 import ActionsPanel from './ActionsPanel';
-import { fetchPreviousActions, type PreviousAction } from './ActionsPanel';
+import { actions as actionsService, type PreviousAction } from '../services/actions';
 import { zoomRef } from '../zoomRef';
 import { storage } from '../lib/storage';
 import { hashCode } from '../lib/hash';
@@ -409,7 +409,7 @@ export default function Board() {
   const getPreviousActions = useCallback(async () => {
     if (prevActionsCache.current) return prevActionsCache.current;
     if (!state.teamId || !state.id) return [];
-    const result = await fetchPreviousActions(state.teamId, state.id);
+    const result = await actionsService.previousForTeam(state.teamId, state.id);
     prevActionsCache.current = result;
     return result;
   }, [state.teamId, state.id]);

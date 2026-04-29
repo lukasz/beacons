@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from '../hooks/useTheme';
-import { supabase } from '../supabaseClient';
 import type { AuthUser } from '../hooks/useAuth';
 import LinearSync, { type RetroTemplate, buildStats } from './LinearSync';
 import { COLORS } from '../types';
@@ -12,41 +11,21 @@ import {
 } from '../linearClient';
 import { storage } from '../lib/storage';
 import { timeAgo } from '../lib/time';
+import {
+  boards as boardsService,
+  type BoardListItem,
+  type TemplateBoardItem,
+  type GlobalActionItem,
+} from '../services/boards';
+import { teams as teamsService } from '../services/teams';
+import { actions as actionsService } from '../services/actions';
+
+// Local aliases — keep callsites readable; types come from services/boards.
+type BoardSummary = BoardListItem;
+type TemplateBoardSummary = TemplateBoardItem;
+type GlobalAction = GlobalActionItem;
 
 // ---- Types ----
-
-interface BoardSummary {
-  id: string;
-  sessionName: string;
-  teamName: string;
-  teamId: string | null;
-  stickyCount: number;
-  sectionCount: number;
-  actionCount: number;
-  participants: { id: string; name: string }[];
-  updatedAt: string;
-  archived: boolean;
-  linearSourceId?: string;
-  linearSourceType?: 'cycle' | 'project';
-}
-
-interface TemplateBoardSummary extends BoardSummary {
-  sections: { title: string; colorIdx: number }[];
-}
-
-interface GlobalAction {
-  id: string;
-  text: string;
-  done: boolean;
-  authorName: string;
-  linearUrl?: string;
-  linearKey?: string;
-  createdAt: number;
-  boardId: string;
-  sessionName: string;
-  teamName: string;
-  teamId: string | null;
-}
 
 export interface TemplateSection {
   title: string;
@@ -173,73 +152,16 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   const fetchBoards = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('boards')
-        .select('id, updated_at, archived, team_id, is_template, state->users, state->postIts, state->sections, state->actions, state->sessionName, state->teamName, state->cycleStats')
-        .or('is_template.is.null,is_template.eq.false')
-        .order('updated_at', { ascending: false });
-
-      if (error) { console.error('Failed to fetch boards:', error); setLoading(false); return; }
-
-      const summaries: BoardSummary[] = (data || [])
-        .map((row: Record<string, unknown>) => {
-          const users = (row.users || {}) as Record<string, { id: string; name: string }>;
-          const isParticipant = Object.keys(users).includes(user.id);
-          return {
-            id: row.id as string,
-            sessionName: (row.sessionName as string) || '',
-            teamName: (row.teamName as string) || '',
-            teamId: (row.team_id as string) || null,
-            stickyCount: Object.keys((row.postIts || {}) as Record<string, unknown>).length,
-            sectionCount: Object.keys((row.sections || {}) as Record<string, unknown>).length,
-            actionCount: Object.keys((row.actions || {}) as Record<string, unknown>).length,
-            participants: Object.values(users).map((u) => ({ id: u.id, name: u.name })),
-            updatedAt: row.updated_at as string,
-            archived: (row.archived as boolean) || false,
-            linearSourceId: (row.cycleStats as Record<string, unknown>)?.linearSourceId as string | undefined,
-            linearSourceType: (row.cycleStats as Record<string, unknown>)?.source as 'cycle' | 'project' | undefined,
-            _isParticipant: isParticipant,
-          };
-        })
-        // Show all boards to all authenticated users (small org — no per-user filtering)
-        // .filter((b: BoardSummary & { _isParticipant: boolean }) => b._isParticipant)
-        .map(({ _isParticipant, ...rest }: BoardSummary & { _isParticipant: boolean }) => rest);
-
-      setBoards(summaries);
+      const list = await boardsService.list();
+      setBoards(list);
     } catch (err) { console.error('Failed to fetch boards:', err); }
     setLoading(false);
-  }, [user.id]);
+  }, []);
 
   const fetchActions = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('boards')
-        .select('id, team_id, state->actions, state->sessionName, state->teamName, state->users')
-        .order('updated_at', { ascending: false });
-
-      if (error) { console.error('Failed to fetch actions:', error); return; }
-
-      const allActions: GlobalAction[] = [];
-      for (const row of data || []) {
-        const users = (row.users || {}) as Record<string, { id: string }>;
-        if (!Object.keys(users).includes(user.id)) continue;
-
-        const boardActions = (row.actions || {}) as Record<string, {
-          id: string; text: string; done: boolean; authorName: string;
-          linearUrl?: string; linearKey?: string; createdAt: number;
-        }>;
-        for (const a of Object.values(boardActions)) {
-          allActions.push({
-            ...a,
-            boardId: row.id as string,
-            sessionName: (row.sessionName as string) || '',
-            teamName: (row.teamName as string) || '',
-            teamId: (row.team_id as string) || null,
-          });
-        }
-      }
-      allActions.sort((a, b) => b.createdAt - a.createdAt);
-      setGlobalActions(allActions);
+      const list = await boardsService.listGlobalActions(user.id);
+      setGlobalActions(list);
     } catch (err) { console.error('Failed to fetch actions:', err); }
   }, [user.id]);
 
@@ -247,38 +169,11 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
   const fetchTeamsData = useCallback(async () => {
     try {
-      // Fetch all teams (shared across the org)
-      const { data: teamRows, error: teamErr } = await supabase
-        .from('teams')
-        .select('*')
-        .order('name');
-
-      if (teamErr) { console.error('Failed to fetch teams:', teamErr); return; }
-      if (!teamRows || teamRows.length === 0) { setTeams([]); return; }
-
-      // Auto-join: ensure current user is a member of every team
-      const { data: memberships } = await supabase
-        .from('team_members')
-        .select('team_id')
-        .eq('user_id', user.id);
-
-      const memberOf = new Set((memberships || []).map((m: { team_id: string }) => m.team_id));
-      const missing = teamRows.filter((t: Record<string, unknown>) => !memberOf.has(t.id as string));
-      if (missing.length > 0) {
-        await supabase.from('team_members').insert(
-          missing.map((t: Record<string, unknown>) => ({ team_id: t.id as string, user_id: user.id, role: 'member' })),
-        );
-      }
-
-      setTeams(teamRows.map((t: Record<string, unknown>) => ({
-        id: t.id as string,
-        name: t.name as string,
-        linearTeamId: (t.linear_team_id as string) || undefined,
-        linearTeamKey: (t.linear_team_key as string) || undefined,
-        createdBy: t.created_by as string,
-        createdAt: t.created_at as string,
-        updatedAt: t.updated_at as string,
-      })));
+      const teamRows = await teamsService.list();
+      if (teamRows.length === 0) { setTeams([]); return; }
+      // Auto-join: ensure current user is a member of every team.
+      await teamsService.ensureMembershipsForAll(user.id, teamRows.map((t) => t.id));
+      setTeams(teamRows);
     } catch (err) { console.error('Failed to fetch teams:', err); }
   }, [user.id]);
 
@@ -287,33 +182,8 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   const fetchTemplates = useCallback(async () => {
     setTemplateBoardsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('boards')
-        .select('id, state, updated_at, archived, is_template')
-        .eq('is_template', true)
-        .order('updated_at', { ascending: false });
-      if (error) { console.error('Failed to fetch template boards:', error); }
-      else {
-        const tplBoards: TemplateBoardSummary[] = (data || []).map((row: { id: string; state: Record<string, unknown>; updated_at: string; archived?: boolean }) => {
-          const st = row.state || {};
-          const sections = st.sections as Record<string, { title: string; colorIdx: number }> || {};
-          const postIts = st.postIts as Record<string, unknown> || {};
-          return {
-            id: row.id,
-            sessionName: (st.sessionName as string) || '',
-            teamName: (st.teamName as string) || '',
-            teamId: null,
-            sectionCount: Object.keys(sections).length,
-            stickyCount: Object.keys(postIts).length,
-            actionCount: 0,
-            participants: [],
-            updatedAt: row.updated_at,
-            archived: row.archived || false,
-            sections: Object.values(sections),
-          };
-        });
-        setTemplateBoards(tplBoards);
-      }
+      const list = await boardsService.listTemplates();
+      setTemplateBoards(list);
     } catch (err) { console.error('Failed to fetch template boards:', err); }
     setTemplateBoardsLoading(false);
   }, []);
@@ -379,15 +249,21 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
     setGlobalActions((prev) =>
       prev.map((a) => (a.id === action.id && a.boardId === action.boardId) ? { ...a, done: newDone } : a),
     );
-    // Persist to Supabase — read board state, update action, write back
     try {
-      const { data } = await supabase.from('boards').select('state').eq('id', action.boardId).single();
-      if (data?.state) {
-        const state = data.state as Record<string, unknown>;
-        const actions = (state.actions || {}) as Record<string, Record<string, unknown>>;
-        if (actions[action.id]) {
-          actions[action.id] = { ...actions[action.id], done: newDone };
-          await supabase.from('boards').update({ state: { ...state, actions } }).eq('id', action.boardId);
+      // The service flips the action's `done` flag on the source board's
+      // state. We always flip in the same direction here because the
+      // service is idempotent.
+      if (newDone) {
+        await actionsService.markDoneOnSourceBoard(action.boardId, action.id);
+      } else {
+        // Reopen via direct state patch — read, flip back to false, write.
+        const state = await boardsService.getState(action.boardId);
+        if (state) {
+          const stateActions = (state.actions ?? {}) as Record<string, Record<string, unknown>>;
+          if (stateActions[action.id]) {
+            stateActions[action.id] = { ...stateActions[action.id], done: false };
+            await boardsService.updateState(action.boardId, { ...state, actions: stateActions });
+          }
         }
       }
     } catch (e) {
@@ -453,16 +329,11 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
           ? { ...a, linearUrl: result.url, linearKey: result.identifier }
           : a),
       );
-      // Persist to Supabase
-      const { data } = await supabase.from('boards').select('state').eq('id', action.boardId).single();
-      if (data?.state) {
-        const state = data.state as Record<string, unknown>;
-        const actions = (state.actions || {}) as Record<string, Record<string, unknown>>;
-        if (actions[action.id]) {
-          actions[action.id] = { ...actions[action.id], linearUrl: result.url, linearKey: result.identifier };
-          await supabase.from('boards').update({ state: { ...state, actions } }).eq('id', action.boardId);
-        }
-      }
+      await actionsService.updateLinearLinkOnSourceBoard(
+        action.boardId,
+        action.id,
+        { url: result.url, key: result.identifier },
+      );
       setDCreatedTicket({ url: result.url, key: result.identifier });
       setDLinearStep('done');
     } catch (e) {
@@ -485,37 +356,27 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   // ---- Team CRUD ----
 
   const handleCreateTeam = useCallback(async (name: string, linearTeamId?: string, linearTeamKey?: string) => {
-    const id = crypto.randomUUID().slice(0, 8);
-    const now = new Date().toISOString();
     try {
-      const { error: teamErr } = await supabase.from('teams').insert({
-        id, name, linear_team_id: linearTeamId || null, linear_team_key: linearTeamKey || null,
-        created_by: user.id, created_at: now, updated_at: now,
-      });
-      if (teamErr) { console.error('Failed to create team:', teamErr); return; }
-      // Add creator as owner
-      await supabase.from('team_members').insert({ team_id: id, user_id: user.id, role: 'owner' });
+      await teamsService.create({ name, linearTeamId, linearTeamKey, ownerUserId: user.id });
       fetchTeamsData();
     } catch (err) { console.error('Failed to create team:', err); }
   }, [user.id, fetchTeamsData]);
 
   const handleUpdateTeam = useCallback(async (team: Team) => {
     try {
-      const { error } = await supabase.from('teams').update({
+      await teamsService.update({
+        id: team.id,
         name: team.name,
-        linear_team_id: team.linearTeamId || null,
-        linear_team_key: team.linearTeamKey || null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', team.id);
-      if (error) { console.error('Failed to update team:', error); return; }
+        linearTeamId: team.linearTeamId,
+        linearTeamKey: team.linearTeamKey,
+      });
       fetchTeamsData();
     } catch (err) { console.error('Failed to update team:', err); }
   }, [fetchTeamsData]);
 
   const handleDeleteTeam = useCallback(async (teamId: string) => {
     try {
-      const { error } = await supabase.from('teams').delete().eq('id', teamId);
-      if (error) { console.error('Failed to delete team:', error); return; }
+      await teamsService.remove(teamId);
       setTeams((prev) => prev.filter((t) => t.id !== teamId));
       setSelectedTeamFilters((prev) => prev.filter((id) => id !== teamId));
     } catch (err) { console.error('Failed to delete team:', err); }
@@ -527,23 +388,12 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
     // Optimistic update
     setBoards((prev) => prev.map((b) => b.id === boardId ? { ...b, teamId } : b));
     try {
-      // Update the column
-      const { error } = await supabase.from('boards').update({ team_id: teamId }).eq('id', boardId);
-      if (error) {
-        console.error('Failed to assign board to team:', error);
-        fetchBoards();
-        return;
-      }
-      // Also update teamId + teamName inside the JSONB state so the Go server picks it up
-      const { data } = await supabase.from('boards').select('state').eq('id', boardId).single();
-      if (data?.state) {
-        const state = data.state as Record<string, unknown>;
-        const team = teamId ? teams.find((t) => t.id === teamId) : null;
-        state.teamId = teamId || '';
-        if (team) state.teamName = team.name;
-        await supabase.from('boards').update({ state }).eq('id', boardId);
-      }
-    } catch (err) { console.error('Failed to assign board to team:', err); fetchBoards(); }
+      const team = teamId ? teams.find((t) => t.id === teamId) : null;
+      await boardsService.attachToTeam(boardId, team ? { id: team.id, name: team.name } : null);
+    } catch (err) {
+      console.error('Failed to assign board to team:', err);
+      fetchBoards();
+    }
   }, [fetchBoards, teams]);
 
   // ---- Board actions ----
@@ -564,15 +414,21 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   const handleArchive = useCallback(async (boardId: string, archive: boolean) => {
     setMenuBoardId(null);
     setBoards((prev) => prev.map((b) => b.id === boardId ? { ...b, archived: archive } : b));
-    const { error } = await supabase.from('boards').update({ archived: archive }).eq('id', boardId);
-    if (error) { setBoards((prev) => prev.map((b) => b.id === boardId ? { ...b, archived: !archive } : b)); }
+    try {
+      await boardsService.setArchived(boardId, archive);
+    } catch {
+      setBoards((prev) => prev.map((b) => b.id === boardId ? { ...b, archived: !archive } : b));
+    }
   }, []);
 
   const handleDeleteBoard = useCallback(async (boardId: string) => {
     setConfirmDelete(null); setMenuBoardId(null);
     setBoards((prev) => prev.filter((b) => b.id !== boardId));
-    const { error } = await supabase.from('boards').delete().eq('id', boardId);
-    if (error) { fetchBoards(); }
+    try {
+      await boardsService.remove(boardId);
+    } catch {
+      fetchBoards();
+    }
   }, [fetchBoards]);
 
   // ---- New board creation ----
@@ -592,20 +448,15 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
         matchedTeamId = existing.id;
       } else {
         // Auto-create a Beacons team mapped to this Linear team
-        const newTeamId = crypto.randomUUID().slice(0, 8);
         const teamName = template.cycleStats?.teamName || linearTeamKey || 'Team';
-        const now = new Date().toISOString();
         try {
-          const { error: teamErr } = await supabase.from('teams').insert({
-            id: newTeamId, name: teamName,
-            linear_team_id: linearTeamId, linear_team_key: linearTeamKey || null,
-            created_by: user.id, created_at: now, updated_at: now,
+          matchedTeamId = await teamsService.create({
+            name: teamName,
+            linearTeamId,
+            linearTeamKey,
+            ownerUserId: user.id,
           });
-          if (!teamErr) {
-            await supabase.from('team_members').insert({ team_id: newTeamId, user_id: user.id, role: 'owner' });
-            matchedTeamId = newTeamId;
-            fetchTeamsData(); // refresh team list in background
-          }
+          fetchTeamsData(); // refresh team list in background
         } catch (e) { console.error('Auto-create team failed:', e); }
       }
     }
@@ -617,14 +468,8 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
 
     try {
       const teamName = matchedTeam?.name || template.teamName;
-      let res: Response;
-
-      if (template.templateId) {
-        // Clone the template board and overlay Linear metadata
-        res = await fetch(`/api/rooms/clone/${template.templateId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+      const created = template.templateId
+        ? await boardsService.cloneTemplate(template.templateId, {
             sessionName: template.sessionName,
             teamName,
             beatGoal: template.beatGoal,
@@ -632,29 +477,19 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
             userId: user.id,
             userName: user.name,
             cycleStats: template.cycleStats,
-          }),
-        });
-      } else {
-        // No template selected — create from section list
-        res = await fetch('/api/rooms/template', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          })
+        : await boardsService.createFromTemplate({
             ...template,
             teamName,
             userId: user.id,
             userName: user.name,
             teamId: matchedTeamId || '',
-          }),
-        });
-      }
-
-      const data = await res.json();
+          });
       // Also set team_id directly on the boards table column
       if (matchedTeamId) {
-        await supabase.from('boards').update({ team_id: matchedTeamId }).eq('id', data.id);
+        await boardsService.attachToTeam(created.id, matchedTeam ? { id: matchedTeamId, name: matchedTeam.name } : null);
       }
-      onJoinRoom(data.id);
+      onJoinRoom(created.id);
     } catch (err) { console.error('Failed to create board from template:', err); }
   }, [user.id, user.name, onJoinRoom, teams, fetchTeamsData]);
 
@@ -733,8 +568,11 @@ export default function Dashboard({ user, defaultRoomId, defaultTab, onCreateRoo
   const handleDeleteTemplate = useCallback(async (id: string) => {
     setTemplateConfirmDelete(null);
     setTemplateBoards((prev) => prev.filter((t) => t.id !== id));
-    const { error } = await supabase.from('boards').delete().eq('id', id);
-    if (error) { fetchTemplates(); }
+    try {
+      await boardsService.remove(id);
+    } catch {
+      fetchTemplates();
+    }
   }, [fetchTemplates]);
 
   // ---- Board filtering ----

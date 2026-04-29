@@ -9,6 +9,7 @@ import Board from './components/Board';
 import RiceCalculator from './components/RiceCalculator';
 import TadaLanding from './components/TadaLanding';
 import { storage } from './lib/storage';
+import { boards } from './services/boards';
 
 // Initialize theme from storage before first render
 (() => {
@@ -118,9 +119,8 @@ export default function App() {
   // Check board access mode when unauthenticated user lands on a board URL
   useEffect(() => {
     if (!loading && !user && roomId) {
-      fetch(`/api/rooms/access/${roomId}`)
-        .then((r) => r.json())
-        .then((data) => setBoardAccessMode(data.accessMode || 'org'))
+      boards.getAccessMode(roomId)
+        .then(({ accessMode }) => setBoardAccessMode(accessMode || 'org'))
         .catch(() => setBoardAccessMode('org'));
     } else {
       setBoardAccessMode(null);
@@ -149,32 +149,26 @@ export default function App() {
   }, []);
 
   const handleCreate = useCallback(async () => {
-    const res = await fetch('/api/rooms', { method: 'POST' });
-    const data = await res.json();
-    navigate({ view: 'board', roomId: data.id });
+    const { id } = await boards.createBlank();
+    navigate({ view: 'board', roomId: id });
   }, [navigate]);
 
   const handleCreateTemplate = useCallback(async () => {
     try {
-      const res = await fetch('/api/rooms/template', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionName: '',
-          teamName: '',
-          beatGoal: '',
-          isTemplate: true,
-          sections: [
-            { title: 'What went well', colorIdx: 3 },
-            { title: 'What could improve', colorIdx: 0 },
-            { title: 'Action items', colorIdx: 5 },
-          ],
-          userId: userId,
-          userName: userName,
-        }),
+      const { id } = await boards.createFromTemplate({
+        sessionName: '',
+        teamName: '',
+        beatGoal: '',
+        isTemplate: true,
+        sections: [
+          { title: 'What went well', colorIdx: 3 },
+          { title: 'What could improve', colorIdx: 0 },
+          { title: 'Action items', colorIdx: 5 },
+        ],
+        userId,
+        userName,
       });
-      const data = await res.json();
-      navigate({ view: 'board', roomId: data.id, template: true });
+      navigate({ view: 'board', roomId: id, template: true });
     } catch (err) {
       console.error('Failed to create template:', err);
     }
@@ -186,10 +180,8 @@ export default function App() {
 
   const handleUseTemplate = useCallback(async (templateId: string) => {
     try {
-      const res = await fetch(`/api/rooms/clone/${templateId}`, { method: 'POST' });
-      if (!res.ok) throw new Error('Clone failed');
-      const data = await res.json();
-      navigate({ view: 'board', roomId: data.id });
+      const { id } = await boards.cloneTemplate(templateId);
+      navigate({ view: 'board', roomId: id });
     } catch (err) {
       console.error('Failed to create board from template:', err);
     }
@@ -198,22 +190,17 @@ export default function App() {
   // Keep legacy handleCreateFromTemplate for Linear cycle boards
   const handleCreateFromTemplate = useCallback(async (sections: { title: string; colorIdx: number }[], extra?: { sessionName?: string; teamName?: string; teamId?: string; cycleStats?: unknown }) => {
     try {
-      const res = await fetch('/api/rooms/template', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionName: extra?.sessionName || '',
-          teamName: extra?.teamName || '',
-          teamId: extra?.teamId || '',
-          beatGoal: '',
-          sections,
-          cycleStats: extra?.cycleStats,
-          userId: userId,
-          userName: userName,
-        }),
+      const { id } = await boards.createFromTemplate({
+        sessionName: extra?.sessionName || '',
+        teamName: extra?.teamName || '',
+        teamId: extra?.teamId || '',
+        beatGoal: '',
+        sections,
+        cycleStats: extra?.cycleStats,
+        userId,
+        userName,
       });
-      const data = await res.json();
-      navigate({ view: 'board', roomId: data.id });
+      navigate({ view: 'board', roomId: id });
     } catch (err) {
       console.error('Failed to create board from template:', err);
     }
